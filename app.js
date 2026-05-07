@@ -7,6 +7,20 @@ let globalData = [];
 let currentView = 'dashboard';
 let lockedComercial = null;
 
+const COMERCIAL_MAPPING = {
+    '24': 'MARIANO',
+    '36': 'IVAN',
+    '17': 'RUBEN'
+};
+
+function isMatchComercial(comercialName, filterCode) {
+    if (!comercialName || !filterCode) return false;
+    const name = comercialName.toString().toUpperCase();
+    const code = filterCode.toString().toUpperCase();
+    const mapped = (COMERCIAL_MAPPING[code] || '').toUpperCase();
+    return name.includes(code) || (mapped && name.includes(mapped));
+}
+
 // IndexedDB Persistence
 const DB_NAME = 'SalesDB_Tucuman_v1';
 const STORE_NAME = 'salesStore';
@@ -77,7 +91,7 @@ function loadFromDB() {
                 rawGlobalData = getReq.result.data;
                 
                 if (lockedComercial) {
-                    rawGlobalData = rawGlobalData.filter(r => r.comercial && r.comercial.includes(lockedComercial));
+                    rawGlobalData = rawGlobalData.filter(r => isMatchComercial(r.comercial, lockedComercial));
                 }
                 
                 globalData = [...rawGlobalData];
@@ -179,7 +193,7 @@ async function checkRemoteData() {
                 rawGlobalData = remoteData;
                 
                 if (lockedComercial) {
-                    rawGlobalData = rawGlobalData.filter(r => r.comercial && r.comercial.includes(lockedComercial));
+                    rawGlobalData = rawGlobalData.filter(r => isMatchComercial(r.comercial, lockedComercial));
                 }
                 
                 globalData = [...rawGlobalData];
@@ -379,7 +393,7 @@ function processExcel(data) {
         rawGlobalData = validData;
         
         if (lockedComercial) {
-            rawGlobalData = rawGlobalData.filter(r => r.comercial && r.comercial.includes(lockedComercial));
+            rawGlobalData = rawGlobalData.filter(r => isMatchComercial(r.comercial, lockedComercial));
         }
         
         globalData = [...rawGlobalData];
