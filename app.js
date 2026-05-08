@@ -479,7 +479,7 @@ function renderDashboard() {
     const tbComClients = document.querySelector('#topClientsComercialTable tbody');
     tbComClients.innerHTML = '';
     Object.keys(comercialClientStats).forEach(com => {
-        Object.entries(comercialClientStats[com]).sort((a,b) => b[1]-a[1]).slice(0, 10).forEach(cl => {
+        Object.entries(comercialClientStats[com]).sort((a,b) => b[1]-a[1]).forEach(cl => {
             const tr = document.createElement('tr');
             tr.innerHTML = `<td>${com}</td><td>${cl[0]}</td><td style="color:var(--primary)">${formatCurrency(cl[1])}</td>`;
             tbComClients.appendChild(tr);
@@ -934,7 +934,7 @@ function checkLockedComercial() {
         
         const style = document.createElement('style');
         style.textContent = `
-            #btnClearData, #btnExportRemote, .sidebar-bottom, [data-view="comercial"], [data-view="mix"], #vendedorFilter { display: none !important; }
+            #btnClearData, #btnExportRemote, .sidebar-bottom, [data-view="comercial"], #vendedorFilter { display: none !important; }
         `;
         document.head.appendChild(style);
         
