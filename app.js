@@ -494,7 +494,8 @@ function renderDashboard() {
 
 function renderCharts(comercialStats) {
     let revByMonth = {};
-    rawGlobalData.forEach(r => { revByMonth[r.mes] = (revByMonth[r.mes] || 0) + r.facturacion; });
+    // Use globalData so the line chart respects the month filter (e.g., LAST_3)
+    globalData.forEach(r => { revByMonth[r.mes] = (revByMonth[r.mes] || 0) + r.facturacion; });
     let months = Object.keys(revByMonth).sort();
     
     if (monthlyRevenueChartInst) monthlyRevenueChartInst.destroy();
@@ -521,12 +522,27 @@ function renderCharts(comercialStats) {
 function renderProductTrend() {
     const tbProd = document.querySelector('#productsTrendTable tbody');
     tbProd.innerHTML = '';
-    let allMonths = [...new Set(rawGlobalData.map(r => r.mes))].sort();
-    let currentM = allMonths[allMonths.length - 1];
-    let prevM = allMonths[allMonths.length - 2];
+    
+    const mFilter = document.getElementById('monthFilter').value;
+    const vFilter = document.getElementById('vendedorFilter').value;
+    
+    let baseData = rawGlobalData.filter(r => (vFilter === 'ALL' || r.comercial === vFilter));
+    let allMonths = [...new Set(baseData.map(r => r.mes))].sort();
+    
+    if (allMonths.length === 0) return;
+
+    let currentM, prevM;
+    if (mFilter === 'ALL' || mFilter.startsWith('LAST_')) {
+        currentM = allMonths[allMonths.length - 1];
+        prevM = allMonths.length > 1 ? allMonths[allMonths.length - 2] : null;
+    } else {
+        currentM = mFilter;
+        let idx = allMonths.indexOf(currentM);
+        if (idx > 0) prevM = allMonths[idx - 1];
+    }
     
     let stats = {};
-    rawGlobalData.forEach(r => {
+    baseData.forEach(r => {
         if (!stats[r.producto]) stats[r.producto] = { current: 0, prev: 0 };
         if (r.mes === currentM) stats[r.producto].current += r.cantidad;
         if (r.mes === prevM) stats[r.producto].prev += r.cantidad;
@@ -552,12 +568,26 @@ function showProductEvolutionDetail(productName) {
     title.textContent = `Evolución: ${productName}`;
     tbody.innerHTML = '';
     
-    let allMonths = [...new Set(rawGlobalData.map(r => r.mes))].sort();
-    let currentM = allMonths[allMonths.length - 1];
-    let prevM = allMonths[allMonths.length - 2];
+    const mFilter = document.getElementById('monthFilter').value;
+    const vFilter = document.getElementById('vendedorFilter').value;
+    
+    let baseData = rawGlobalData.filter(r => (vFilter === 'ALL' || r.comercial === vFilter));
+    let allMonths = [...new Set(baseData.map(r => r.mes))].sort();
+    
+    if (allMonths.length === 0) return;
+
+    let currentM, prevM;
+    if (mFilter === 'ALL' || mFilter.startsWith('LAST_')) {
+        currentM = allMonths[allMonths.length - 1];
+        prevM = allMonths.length > 1 ? allMonths[allMonths.length - 2] : null;
+    } else {
+        currentM = mFilter;
+        let idx = allMonths.indexOf(currentM);
+        if (idx > 0) prevM = allMonths[idx - 1];
+    }
     
     let clientStats = {};
-    rawGlobalData.forEach(r => {
+    baseData.forEach(r => {
         if (r.producto === productName) {
             if (!clientStats[r.cliente]) clientStats[r.cliente] = { current: 0, prev: 0 };
             if (r.mes === currentM) clientStats[r.cliente].current += r.cantidad;
