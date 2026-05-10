@@ -651,13 +651,21 @@ tbody tr:hover {
 
     /* Client Modal Mobile Specifics */
     .client-modal-overlay {
-        padding: 0.5rem;
+        padding: 0;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
     }
     
     .client-modal-box {
         padding: 1rem;
-        height: 95vh;
+        height: 100dvh; /* use dynamic viewport height if supported */
+        height: 100vh;  /* fallback */
         width: 100%;
+        border-radius: 0;
+        border: none;
+        margin: 0;
     }
 
     .client-modal-header {
@@ -754,8 +762,17 @@ tbody tr:hover {
 
 /* Client Details Modal Specific Classes */
 .client-modal-overlay {
+    position: fixed; /* Make it fixed so it doesn't get clipped by parent overflow */
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     z-index: 2000;
     padding: 2rem;
+    background-color: rgba(2, 44, 34, 0.98); /* dark background to hide content underneath */
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .client-modal-box {
