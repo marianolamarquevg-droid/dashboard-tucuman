@@ -234,47 +234,47 @@
                 </div>
 
                 <!-- Client Presentation Modal -->
-                <div id="clientDetails" class="upload-overlay hidden client-modal-overlay">
-                    <div class="upload-box client-modal-box">
-                        <div class="client-modal-header">
+                <div id="clientDetails" class="upload-overlay hidden" style="z-index: 2000; padding: 2rem;">
+                    <div class="upload-box" style="width: 95%; max-width: 1400px; height: 90vh; background: var(--bg-main); border: 1px solid var(--border-color); text-align: left; padding: 2rem; display: flex; flex-direction: column; overflow: hidden; border-radius: var(--radius-lg); box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
                             <div class="client-info">
-                                <h2 id="cdName" class="client-name-title">Nombre del Cliente</h2>
-                                <p id="cdIdLoc" class="client-id-loc"><span class="badge badge-id">ID: <span id="cdId"></span></span> <span id="cdComercial" class="client-comercial-tag"><i data-lucide="briefcase" class="inline-icon"></i> Vendedor</span></p>
+                                <h2 id="cdName" style="font-size: 1.8rem; margin: 0 0 0.25rem 0; color: var(--primary); font-weight: 700;">Nombre del Cliente</h2>
+                                <p id="cdIdLoc" style="font-size: 1rem; margin: 0;"><span class="badge" style="font-size: 0.9rem;">ID: <span id="cdId"></span></span> <span id="cdComercial" style="color: var(--text-muted); margin-left: 1rem;"><i data-lucide="briefcase" style="display:inline;vertical-align:middle;"></i> Vendedor</span></p>
                             </div>
-                            <div class="client-stats-container">
-                                <button id="btnClosePresentation" class="btn-close-modal"><i data-lucide="x" class="inline-icon"></i> Cerrar</button>
-                                <div class="client-stats-grid">
-                                    <div class="stat">
-                                        <span class="label">Mix de Productos</span>
-                                        <span class="val text-warning" id="cdMixProductos">0</span>
+                            <div class="client-stats" style="text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 0.5rem;">
+                                <button id="btnClosePresentation" style="background: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-main); padding: 0.4rem 0.8rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.9rem; font-weight: 600; transition: all 0.2s;"><i data-lucide="x" style="display:inline-block; vertical-align: middle;"></i> Cerrar</button>
+                                <div style="display: flex; gap: 1.5rem; align-items: flex-end;">
+                                    <div class="stat" style="text-align: right;">
+                                        <span class="label" style="font-size: 0.9rem; color: var(--text-muted); display: block;">Mix de Productos</span>
+                                        <span class="val" id="cdMixProductos" style="font-size: 1.8rem; color: var(--warning); font-weight: 700; line-height: 1;">0</span>
                                     </div>
-                                    <div class="stat">
-                                        <span class="label">Ticket Promedio</span>
-                                        <span class="val text-primary" id="cdAverageTicket">$0</span>
-                                        <span id="cdInvoicesCount" class="sub-label">(0 boletas)</span>
+                                    <div class="stat" style="text-align: right;">
+                                        <span class="label" style="font-size: 0.9rem; color: var(--text-muted); display: block;">Ticket Promedio</span>
+                                        <span class="val" id="cdAverageTicket" style="font-size: 1.8rem; color: var(--primary); font-weight: 700; line-height: 1;">$0</span>
+                                        <span id="cdInvoicesCount" style="font-size: 0.75rem; color: var(--text-muted); display: block; margin-top: 0.2rem;">(0 boletas)</span>
                                     </div>
-                                    <div class="stat">
-                                        <span class="label">Total Facturado</span>
-                                        <span class="val text-success" id="cdTotal">$0</span>
+                                    <div class="stat" style="text-align: right;">
+                                        <span class="label" style="font-size: 0.9rem; color: var(--text-muted); display: block;">Total Facturado</span>
+                                        <span class="val" id="cdTotal" style="font-size: 1.8rem; color: var(--success); font-weight: 700; line-height: 1;">$0</span>
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div class="client-modal-content">
-                            <div class="charts-row client-charts-row">
-                                <div class="chart-card wide client-chart-card">
-                                    <h3 class="client-chart-title">Evolución Mensual de Compras</h3>
-                                    <div class="client-chart-container">
+                        <div style="flex: 1; overflow-y: auto; padding-right: 1rem;">
+                            <div class="charts-row" style="margin-bottom: 2rem; grid-template-columns: 1fr;">
+                                <div class="chart-card wide" id="clientChartCard" style="border: none; background: var(--bg-surface); box-shadow: none;">
+                                    <h3 style="font-size: 1.5rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">Evolución Mensual de Compras</h3>
+                                    <div style="height: 350px; position: relative;">
                                         <canvas id="clientHistoryChart"></canvas>
                                     </div>
                                 </div>
                             </div>
 
-                            <div class="table-card client-table-card">
-                                <h3 class="client-table-title">Detalle de Productos Consumidos</h3>
+                            <div class="table-card" style="border: none; background: var(--bg-surface); box-shadow: none;">
+                                <h3 style="font-size: 1.2rem; margin-bottom: 0.8rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">Detalle de Productos Consumidos</h3>
                                 <div class="table-responsive">
-                                    <table id="clientProductsTable" class="client-products-table">
+                                    <table id="clientProductsTable" style="font-size: 0.95rem;">
                                         <thead id="clientProductsTableHead">
                                             <tr>
                                                 <th>Producto</th>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'via-tucuman-v7';
+const CACHE_NAME = 'via-tucuman-v8';
 const ASSETS = [
   './',
   './index.html',
