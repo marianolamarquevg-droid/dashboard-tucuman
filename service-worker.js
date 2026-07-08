@@ -1,4 +1,4 @@
-const CACHE_NAME = 'via-tucuman-v8';
+const CACHE_NAME = 'via-tucuman-v9';
 const ASSETS = [
   './',
   './index.html',
@@ -20,22 +20,41 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate event: cleanup old caches
+// Activate event: delete old caches
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
+    caches.keys().then((keys) =>
+      Promise.all(
         keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
-      );
-    }).then(() => self.clients.claim())
+      )
+    ).then(() => self.clients.claim())
   );
 });
 
-// Fetch event: serve from cache, fallback to network
+// Fetch event: network-first for data.json, cache-first for everything else
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // SIEMPRE ir a la red para data.json - nunca usar cache
+  if (url.pathname.endsWith('data.json')) {
+    event.respondWith(
+      fetch(event.request, { cache: 'no-store' })
+        .catch(() => caches.match('./data.json'))
+    );
+    return;
+  }
+
+  // Cache-first para assets estaticos
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      return response || fetch(event.request);
+    caches.match(event.request).then((cached) => {
+      return cached || fetch(event.request).then((response) => {
+        return caches.open(CACHE_NAME).then((cache) => {
+          if (event.request.method === 'GET') {
+            cache.put(event.request, response.clone());
+          }
+          return response;
+        });
+      });
     })
   );
 });
