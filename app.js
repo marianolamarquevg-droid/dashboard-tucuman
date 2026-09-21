@@ -8,8 +8,8 @@ let currentView = 'dashboard';
 let lockedComercial = null;
 
 const COMERCIAL_MAPPING = {
-    '24': 'MARIANO',
-    '36': 'IVAN',
+    '25': 'MARIANO',
+    '28': 'IVAN',
     '17': 'RUBEN',
     '30': 'BRAIAN'
 };
