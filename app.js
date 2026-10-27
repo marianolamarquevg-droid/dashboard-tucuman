@@ -8,8 +8,8 @@ let currentView = 'dashboard';
 let lockedComercial = null;
 
 const COMERCIAL_MAPPING = {
-    '25': 'MARIANO',
-    '28': 'IVAN',
+    '24': 'MARIANO',
+    '36': 'IVAN',
     '17': 'RUBEN',
     '30': 'BRAIAN'
 };
@@ -53,17 +53,32 @@ function saveToDB(data) {
 }
 
 function loadFromDB() {
-    // 1. Intentar cargar PRIMERO desde LocalStorage (Soluciona el error de ceros en iPhone)
-    try {
-        const localBackup = localStorage.getItem('sales_tucuman_backup');
-        if (localBackup) {
-            const parsedData = JSON.parse(localBackup);
-            if (parsedData && parsedData.length > 0) {
-                processLoadedData(parsedData);
-                console.log('Datos cargados desde el respaldo local de iPhone');
-                return;
-            }
+    // Forzamos primero una verificación rápida del archivo remoto en GitHub
+    checkRemoteData();
+
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME, { keyPath: 'id' });
         }
+    };
+    request.onsuccess = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) return;
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const getReq = store.get(1);
+        getReq.onsuccess = () => {
+            if (getReq.result && getReq.result.data && getReq.result.data.length > 0) {
+                // Solo cargamos local si hay datos reales, si no, dejamos que actúe checkRemoteData
+                if (globalData.length === 0) {
+                    processLoadedData(getReq.result.data);
+                }
+            }
+        };
+    };
+}
     } catch (e) {
         console.log('Error al leer LocalStorage, intentando IndexedDB...', e);
     }
