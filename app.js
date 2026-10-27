@@ -292,7 +292,7 @@ function applyFilters() {
     }
 }
 
-const REMOTE_DATA_URL = './data.json';
+const REMOTE_DATA_URL = '/dashboard-tucuman/data.json';
 
 async function checkRemoteData() {
     try {
