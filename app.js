@@ -22,11 +22,21 @@ function isMatchComercial(comercialName, filterCode) {
     return name.includes(code) || (mapped && name.includes(mapped));
 }
 
-// IndexedDB Persistence
+// ==========================================
+// PERSISTENCIA HÍBRIDA (IndexedDB + LocalStorage para iPhone)
+// ==========================================
 const DB_NAME = 'SalesDB_Tucuman_v1';
 const STORE_NAME = 'salesStore';
 
 function saveToDB(data) {
+    // 1. Guardar en LocalStorage (Respaldo infalible para iOS / iPhone)
+    try {
+        localStorage.setItem('sales_tucuman_backup', JSON.stringify(data));
+    } catch (e) {
+        console.warn('No se pudo guardar en LocalStorage:', e);
+    }
+
+    // 2. Guardar en IndexedDB
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = (e) => {
         const db = e.target.result;
@@ -40,6 +50,63 @@ function saveToDB(data) {
         const store = tx.objectStore(STORE_NAME);
         store.put({ id: 1, data: data });
     };
+}
+
+function loadFromDB() {
+    // 1. Intentar cargar PRIMERO desde LocalStorage (Soluciona el error de ceros en iPhone)
+    try {
+        const localBackup = localStorage.getItem('sales_tucuman_backup');
+        if (localBackup) {
+            const parsedData = JSON.parse(localBackup);
+            if (parsedData && parsedData.length > 0) {
+                processLoadedData(parsedData);
+                console.log('Datos cargados desde el respaldo local de iPhone');
+                return;
+            }
+        }
+    } catch (e) {
+        console.log('Error al leer LocalStorage, intentando IndexedDB...', e);
+    }
+
+    // 2. Si no hay backup local, intentar IndexedDB
+    const request = indexedDB.open(DB_NAME, 1);
+    request.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) {
+            db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+        }
+    };
+    request.onsuccess = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(STORE_NAME)) return;
+        const tx = db.transaction(STORE_NAME, 'readonly');
+        const store = tx.objectStore(STORE_NAME);
+        const getReq = store.get(1);
+        getReq.onsuccess = () => {
+            if (getReq.result && getReq.result.data && getReq.result.data.length > 0) {
+                processLoadedData(getReq.result.data);
+            }
+        };
+    };
+}
+
+function processLoadedData(data) {
+    rawGlobalData = data;
+    
+    if (lockedComercial) {
+        rawGlobalData = rawGlobalData.filter(r => isMatchComercial(r.comercial, lockedComercial));
+    }
+    
+    globalData = [...rawGlobalData];
+    updateMonthFilter();
+    updateVendedorFilter();
+    dataStatus.textContent = `Datos Cargados (${globalData.length} filas)`;
+    dataStatus.className = 'status-badge loaded';
+    document.getElementById('btnClearData').classList.remove('hidden');
+    document.getElementById('btnExportRemote').classList.remove('hidden');
+    uploadOverlay.classList.add('hidden');
+    views[currentView].classList.remove('hidden');
+    renderDashboard();
 }
 
 function updateMonthFilter() {
@@ -73,6 +140,48 @@ function updateVendedorFilter() {
     vendedorSelect.classList.remove('hidden');
 }
 
+document.addEventListener('DOMContentLoaded', () => {
+    checkLockedComercial();
+    loadFromDB();
+    checkRemoteData();
+    const btnClear = document.getElementById('btnClearData');
+    if (btnClear) {
+        btnClear.addEventListener('click', () => {
+            if(confirm('¿Estás seguro de que deseas borrar todos los datos cargados?')) {
+                rawGlobalData = [];
+                globalData = [];
+                localStorage.removeItem('sales_tucuman_backup'); // Limpiar también el respaldo de iPhone
+                
+                const request = indexedDB.open(DB_NAME, 1);
+                request.onsuccess = (e) => {
+                    const db = e.target.result;
+                    const tx = db.transaction(STORE_NAME, 'readwrite');
+                    const store = tx.objectStore(STORE_NAME);
+                    store.clear();
+                };
+                document.getElementById('monthFilter').classList.add('hidden');
+                document.getElementById('vendedorFilter').classList.add('hidden');
+                btnClear.classList.add('hidden');
+                dataStatus.textContent = 'Esperando datos...';
+                dataStatus.className = 'status-badge empty';
+                uploadOverlay.classList.remove('hidden');
+                document.querySelectorAll('.sidebar nav a').forEach(l => l.classList.remove('active'));
+                document.querySelector(`[data-view="dashboard"]`).classList.add('active');
+                Object.values(views).forEach(v => v.classList.add('hidden'));
+            }
+        });
+    }
+
+    const btnExport = document.getElementById('btnExportRemote');
+    if (btnExport) {
+        btnExport.addEventListener('click', exportDataForMobile);
+    }
+    
+    document.getElementById('monthFilter').addEventListener('change', applyFilters);
+    document.getElementById('comercialSelector').addEventListener('change', renderComercialView);
+    const btnExportMix = document.getElementById('btnExportMix');
+    if (btnExportMix) btnExportMix.addEventListener('click', exportMixToExcel);
+});
 function loadFromDB() {
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = (e) => {
