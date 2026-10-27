@@ -307,7 +307,7 @@ function applyFilters() {
     }
 }
 
-const REMOTE_DATA_URL = '/dashboard-tucuman/data.json';
+const REMOTE_DATA_URL = 'https://marianolamarquevg-droid.github.io/dashboard-tucuman/data.json';
 
 async function checkRemoteData() {
     try {
