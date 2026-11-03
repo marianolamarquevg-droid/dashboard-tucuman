@@ -608,17 +608,24 @@ window.showProductEvolutionDetail = showProductEvolutionDetail;
 
 // Search
 // ==========================================
-// BÚSQUEDA Y DETALLE DE CLIENTES (CORREGIDO PARA iOS/IPHONE)
+// BÚSQUEDA Y DETALLE DE CLIENTES (CORREGIDO Y BLINDADO)
 // ==========================================
 document.getElementById('clientSearchInput').addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase().trim();
     const sug = document.getElementById('searchSuggestions');
-    if (term.length < 2) { sug.classList.add('hidden'); return; }
+    if (!sug) return;
+    
+    if (term.length < 2) { 
+        sug.classList.add('hidden'); 
+        return; 
+    }
     
     const clients = new Map();
     rawGlobalData.forEach(r => {
-        if ((r.cliente && r.cliente.toLowerCase().includes(term)) || (r.id_cliente && r.id_cliente.toLowerCase().includes(term))) {
-            clients.set(r.id_cliente, r.cliente);
+        const name = r.cliente || '';
+        const id = r.id_cliente || '';
+        if (name.toLowerCase().includes(term) || id.toLowerCase().includes(term)) {
+            clients.set(id || name, name);
         }
     });
     
@@ -641,54 +648,65 @@ function searchClient() {
     const term = document.getElementById('clientSearchInput').value.toLowerCase().trim();
     if (!term) return;
 
-    // Filtrar filas del cliente evitando errores de undefined
+    // 1. Filtrar filas del cliente
     const rows = rawGlobalData.filter(r => {
         const idMatch = r.id_cliente && r.id_cliente.toString().toLowerCase().includes(term);
         const nameMatch = r.cliente && r.cliente.toString().toLowerCase().includes(term);
         return idMatch || nameMatch;
     });
 
+    // 2. Si no hay filas, mostrar estado vacío
     const emptyState = document.getElementById('clientEmptyState');
-    const resultContainer = document.getElementById('clientResultContainer') || document.querySelector('.client-results');
-
     if (rows.length === 0) {
         if (emptyState) emptyState.classList.remove('hidden');
-        if (resultContainer) resultContainer.classList.add('hidden');
         return;
     }
 
-    // Ocultar mensaje de "sin datos" y mostrar el contenedor de resultados
+    // 3. Ocultar el cartel de "Sin cliente seleccionado"
     if (emptyState) emptyState.classList.add('hidden');
-    if (resultContainer) resultContainer.classList.remove('hidden');
 
-    // Calcular números del cliente
+    // 4. MUESTRA FORZADA: Quitar la clase 'hidden' de todos los bloques dentro de la vista de cliente
+    const clientView = document.getElementById('clientSearchView');
+    if (clientView) {
+        const hiddenElements = clientView.querySelectorAll('.hidden');
+        hiddenElements.forEach(el => {
+            if (el.id !== 'clientEmptyState' && el.id !== 'searchSuggestions') {
+                el.classList.remove('hidden');
+            }
+        });
+    }
+
+    // 5. Calcular Totales
     let totalCliente = 0;
     let itemsCliente = 0;
     rows.forEach(r => {
-        totalCliente += r.facturacion;
-        itemsCliente += r.cantidad;
+        totalCliente += (r.facturacion || 0);
+        itemsCliente += (r.cantidad || 0);
     });
 
-    // Inyectar KPIs del cliente
-    const elTotal = document.getElementById('clientTotalRevenue');
+    // 6. Inyectar Totales en tarjetas (soporta múltiples variantes de ID)
+    const elTotal = document.getElementById('clientTotalRevenue') || document.getElementById('clientTotalFacturacion');
     if (elTotal) elTotal.textContent = formatCurrency(totalCliente);
 
-    const elItems = document.getElementById('clientTotalItems');
+    const elItems = document.getElementById('clientTotalItems') || document.getElementById('clientTotalCantidad');
     if (elItems) elItems.textContent = formatNumber(itemsCliente);
 
-    // Cargar la tabla de transacciones del cliente
-    const tbody = document.querySelector('#clientDetailTable tbody');
+    // 7. Rellenar la Tabla de Detalle
+    const tbody = document.querySelector('#clientDetailTable tbody') || document.querySelector('#clientSearchView table tbody');
     if (tbody) {
         tbody.innerHTML = '';
         rows.forEach(item => {
             const tr = document.createElement('tr');
             tr.innerHTML = `
-                <td>${item.fecha_raw || 'S/F'}</td>
+                <td>${item.fecha_raw || item.mes || 'S/F'}</td>
                 <td>${item.producto}</td>
                 <td>${formatNumber(item.cantidad)}</td>
-                <td style="color:var(--success)">${formatCurrency(item.facturacion)}</td>
+                <td style="color:var(--success); font-weight:600;">${formatCurrency(item.facturacion)}</td>
             `;
             tbody.appendChild(tr);
         });
     }
+
+    // Recargar iconos visuales
+    if (window.lucide) lucide.createIcons();
 }
