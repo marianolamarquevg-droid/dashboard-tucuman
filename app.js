@@ -644,6 +644,9 @@ document.getElementById('clientSearchInput').addEventListener('input', (e) => {
     sug.classList.toggle('hidden', sug.innerHTML === '');
 });
 
+// Variable global para la instancia del gráfico del cliente
+let clientHistoryChartInst = null;
+
 function searchClient() {
     const term = document.getElementById('clientSearchInput').value.toLowerCase().trim();
     if (!term) return;
@@ -655,58 +658,97 @@ function searchClient() {
         return idMatch || nameMatch;
     });
 
-    // 2. Si no hay filas, mostrar estado vacío
     const emptyState = document.getElementById('clientEmptyState');
     if (rows.length === 0) {
         if (emptyState) emptyState.classList.remove('hidden');
         return;
     }
 
-    // 3. Ocultar el cartel de "Sin cliente seleccionado"
     if (emptyState) emptyState.classList.add('hidden');
 
-    // 4. MUESTRA FORZADA: Quitar la clase 'hidden' de todos los bloques dentro de la vista de cliente
-    const clientView = document.getElementById('clientSearchView');
-    if (clientView) {
-        const hiddenElements = clientView.querySelectorAll('.hidden');
-        hiddenElements.forEach(el => {
-            if (el.id !== 'clientEmptyState' && el.id !== 'searchSuggestions') {
-                el.classList.remove('hidden');
+    // 2. Rellenar Nombre, ID y Vendedor en la cabecera
+    const sample = rows[0];
+    
+    const nameEl = document.getElementById('clientDetailName') || document.querySelector('.client-title') || document.querySelector('#clientSearchView h2');
+    if (nameEl) nameEl.textContent = sample.cliente;
+
+    const idEl = document.getElementById('clientDetailId') || document.querySelector('.client-id-badge');
+    if (idEl) idEl.textContent = `ID: ${sample.id_cliente}`;
+
+    const vendEl = document.getElementById('clientDetailVendedor') || document.querySelector('.client-vendor');
+    if (vendEl) vendEl.textContent = sample.comercial;
+
+    // 3. Calcular Totales y métricas
+    let totalFacturacion = 0;
+    let totalCantidad = 0;
+    let totalBoletas = rows.length;
+
+    // Agrupar facturación por mes para el gráfico
+    let revByMonth = {};
+    let mixSet = new Set();
+
+    rows.forEach(r => {
+        totalFacturacion += (r.facturacion || 0);
+        totalCantidad += (r.cantidad || 0);
+        if (r.mes) {
+            revByMonth[r.mes] = (revByMonth[r.mes] || 0) + r.facturacion;
+        }
+        if (r.producto) mixSet.add(r.producto);
+    });
+
+    const ticketPromedio = totalBoletas > 0 ? totalFacturacion / totalBoletas : 0;
+
+    // 4. Inyectar valores en los KPIs superiores
+    const setVal = (selectors, value) => {
+        selectors.forEach(sel => {
+            const el = document.getElementById(sel) || document.querySelector('.' + sel);
+            if (el) el.textContent = value;
+        });
+    };
+
+    setVal(['clientTotalRevenue', 'kpiTotalRevenue', 'clientTotalFacturacion'], formatCurrency(totalFacturacion));
+    setVal(['clientTicketProm', 'ticketPromedio'], formatCurrency(ticketPromedio));
+    setVal(['clientTotalBoletas', 'totalBoletas'], `${totalBoletas} boletas detected`);
+    setVal(['clientMixCount', 'mixCount'], mixSet.size);
+
+    // 5. RENDERIZAR EL GRÁFICO DE BARRAS "Evolución Mensual de Compras"
+    const months = Object.keys(revByMonth).sort();
+    const revenues = months.map(m => revByMonth[m]);
+
+    const canvasEl = document.getElementById('clientHistoryChart') || document.getElementById('monthlyRevenueChart');
+    if (canvasEl && window.Chart) {
+        if (clientHistoryChartInst) {
+            clientHistoryChartInst.destroy();
+        }
+        clientHistoryChartInst = new Chart(canvasEl, {
+            type: 'bar',
+            data: {
+                labels: months,
+                datasets: [{
+                    label: 'Compras',
+                    data: revenues,
+                    backgroundColor: '#a855f7', // Color morado/violeta de las barras
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    x: { ticks: { color: '#ffffff' }, grid: { display: false } },
+                    y: { ticks: { color: '#ffffff' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+                }
             }
         });
     }
 
-    // 5. Calcular Totales
-    let totalCliente = 0;
-    let itemsCliente = 0;
-    rows.forEach(r => {
-        totalCliente += (r.facturacion || 0);
-        itemsCliente += (r.cantidad || 0);
+    // 6. Forzar la visualización de todos los contenedores ocultos en iPhone
+    document.querySelectorAll('#clientSearchView .hidden, #clientResultContainer.hidden').forEach(el => {
+        el.classList.remove('hidden');
     });
 
-    // 6. Inyectar Totales en tarjetas (soporta múltiples variantes de ID)
-    const elTotal = document.getElementById('clientTotalRevenue') || document.getElementById('clientTotalFacturacion');
-    if (elTotal) elTotal.textContent = formatCurrency(totalCliente);
-
-    const elItems = document.getElementById('clientTotalItems') || document.getElementById('clientTotalCantidad');
-    if (elItems) elItems.textContent = formatNumber(itemsCliente);
-
-    // 7. Rellenar la Tabla de Detalle
-    const tbody = document.querySelector('#clientDetailTable tbody') || document.querySelector('#clientSearchView table tbody');
-    if (tbody) {
-        tbody.innerHTML = '';
-        rows.forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td>${item.fecha_raw || item.mes || 'S/F'}</td>
-                <td>${item.producto}</td>
-                <td>${formatNumber(item.cantidad)}</td>
-                <td style="color:var(--success); font-weight:600;">${formatCurrency(item.facturacion)}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    // Recargar iconos visuales
     if (window.lucide) lucide.createIcons();
 }
