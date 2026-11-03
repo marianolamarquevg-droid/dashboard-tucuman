@@ -607,6 +607,9 @@ function showProductEvolutionDetail(productName) {
 window.showProductEvolutionDetail = showProductEvolutionDetail;
 
 // Search
+// ==========================================
+// BÚSQUEDA Y DETALLE DE CLIENTES (CORREGIDO PARA iOS/IPHONE)
+// ==========================================
 document.getElementById('clientSearchInput').addEventListener('input', (e) => {
     const term = e.target.value.toLowerCase().trim();
     const sug = document.getElementById('searchSuggestions');
@@ -614,46 +617,78 @@ document.getElementById('clientSearchInput').addEventListener('input', (e) => {
     
     const clients = new Map();
     rawGlobalData.forEach(r => {
-        if (r.cliente.toLowerCase().includes(term) || r.id_cliente.toLowerCase().includes(term)) clients.set(r.id_cliente, r.cliente);
+        if ((r.cliente && r.cliente.toLowerCase().includes(term)) || (r.id_cliente && r.id_cliente.toLowerCase().includes(term))) {
+            clients.set(r.id_cliente, r.cliente);
+        }
     });
     
     sug.innerHTML = '';
     Array.from(clients.entries()).slice(0, 10).forEach(([id, name]) => {
-        const d = document.createElement('div'); d.className = 'suggestion-item';
+        const d = document.createElement('div'); 
+        d.className = 'suggestion-item';
         d.innerHTML = `<span class="client-id">${id}</span><span>${name}</span>`;
-        d.onclick = () => { document.getElementById('clientSearchInput').value = name; sug.classList.add('hidden'); searchClient(); };
+        d.onclick = () => { 
+            document.getElementById('clientSearchInput').value = name; 
+            sug.classList.add('hidden'); 
+            searchClient(); 
+        };
         sug.appendChild(d);
     });
     sug.classList.toggle('hidden', sug.innerHTML === '');
 });
 
-function applyFilters() {
-    const vFilter = document.getElementById('vendedorFilter').value;
-    const mFilter = document.getElementById('monthFilter').value;
-    
-    globalData = rawGlobalData.filter(row => {
-        let matchV = (vFilter === 'ALL' || row.comercial === vFilter);
-        let matchM = true;
-        
-        if (mFilter !== 'ALL') {
-            if (mFilter.startsWith('LAST_')) {
-                const count = parseInt(mFilter.split('_')[1]);
-                const allMonths = [...new Set(rawGlobalData.map(r => r.mes))].sort().slice(-count);
-                matchM = allMonths.includes(row.mes);
-            } else {
-                matchM = (row.mes === mFilter);
-            }
-        }
-        
-        return matchV && matchM;
+function searchClient() {
+    const term = document.getElementById('clientSearchInput').value.toLowerCase().trim();
+    if (!term) return;
+
+    // Filtrar filas del cliente evitando errores de undefined
+    const rows = rawGlobalData.filter(r => {
+        const idMatch = r.id_cliente && r.id_cliente.toString().toLowerCase().includes(term);
+        const nameMatch = r.cliente && r.cliente.toString().toLowerCase().includes(term);
+        return idMatch || nameMatch;
     });
-    
-    renderDashboard();
-    
-    if (currentView === 'comercial') {
-        renderComercialView();
+
+    const emptyState = document.getElementById('clientEmptyState');
+    const resultContainer = document.getElementById('clientResultContainer') || document.querySelector('.client-results');
+
+    if (rows.length === 0) {
+        if (emptyState) emptyState.classList.remove('hidden');
+        if (resultContainer) resultContainer.classList.add('hidden');
+        return;
     }
-    if (currentView === 'mix') {
-        renderMixView();
+
+    // Ocultar mensaje de "sin datos" y mostrar el contenedor de resultados
+    if (emptyState) emptyState.classList.add('hidden');
+    if (resultContainer) resultContainer.classList.remove('hidden');
+
+    // Calcular números del cliente
+    let totalCliente = 0;
+    let itemsCliente = 0;
+    rows.forEach(r => {
+        totalCliente += r.facturacion;
+        itemsCliente += r.cantidad;
+    });
+
+    // Inyectar KPIs del cliente
+    const elTotal = document.getElementById('clientTotalRevenue');
+    if (elTotal) elTotal.textContent = formatCurrency(totalCliente);
+
+    const elItems = document.getElementById('clientTotalItems');
+    if (elItems) elItems.textContent = formatNumber(itemsCliente);
+
+    // Cargar la tabla de transacciones del cliente
+    const tbody = document.querySelector('#clientDetailTable tbody');
+    if (tbody) {
+        tbody.innerHTML = '';
+        rows.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${item.fecha_raw || 'S/F'}</td>
+                <td>${item.producto}</td>
+                <td>${formatNumber(item.cantidad)}</td>
+                <td style="color:var(--success)">${formatCurrency(item.facturacion)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
     }
 }
