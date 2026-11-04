@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (monthFilterEl) monthFilterEl.addEventListener('change', applyFilters);
     
     const comercialSelEl = document.getElementById('comercialSelector');
-    if (comercialSelEl) comercialSelector.addEventListener('change', renderComercialView);
+    if (comercialSelEl) comercialSelEl.addEventListener('change', renderComercialView);
     
     const btnExportMix = document.getElementById('btnExportMix');
     if (btnExportMix) btnExportMix.addEventListener('click', exportMixToExcel);
@@ -631,7 +631,7 @@ function showProductEvolutionDetail(productName) {
 window.showProductEvolutionDetail = showProductEvolutionDetail;
 
 // ==========================================
-// BÚSQUEDA Y DETALLE DE CLIENTES (BLINDADO Y CON GRÁFICO DE BARRAS)
+// BÚSQUEDA Y DETALLE DE CLIENTES (CORREGIDO Y COMPLETO)
 // ==========================================
 const clientSearchInput = document.getElementById('clientSearchInput');
 if (clientSearchInput) {
@@ -677,11 +677,12 @@ function searchClient() {
     const term = inputEl.value.toLowerCase().trim();
     if (!term) return;
 
-    // 1. Filtrar filas del cliente
+    // 1. Filtrar filas del cliente de forma flexible
     const rows = rawGlobalData.filter(r => {
-        const idMatch = r.id_cliente && r.id_cliente.toString().toLowerCase().includes(term);
-        const nameMatch = r.cliente && r.cliente.toString().toLowerCase().includes(term);
-        return idMatch || nameMatch;
+        const idMatch = r.id_cliente && r.id_cliente.toString().toLowerCase() === term;
+        const nameMatch = r.cliente && r.cliente.toString().toLowerCase() === term;
+        const partialName = r.cliente && r.cliente.toString().toLowerCase().includes(term);
+        return idMatch || nameMatch || partialName;
     });
 
     const emptyState = document.getElementById('clientEmptyState');
@@ -692,24 +693,31 @@ function searchClient() {
 
     if (emptyState) emptyState.classList.add('hidden');
 
-    // 2. Rellenar Nombre, ID y Vendedor en la cabecera
     const sample = rows[0];
+
+    // 2. Actualizar Nombre, ID y Vendedor arriba
+    const nameEls = document.querySelectorAll('#clientDetailName, .client-name, .client-title');
+    nameEls.forEach(el => el.textContent = sample.cliente);
     
-    const nameEl = document.getElementById('clientDetailName') || document.querySelector('.client-title') || document.querySelector('#clientSearchView h2');
-    if (nameEl) nameEl.textContent = sample.cliente;
+    const titleFallback = document.querySelector('#clientSearchView h2, #clientSearchView .text-xl, #clientSearchView .font-bold');
+    if (titleFallback && !titleFallback.textContent.includes('Evolución')) {
+        titleFallback.textContent = sample.cliente;
+    }
 
-    const idEl = document.getElementById('clientDetailId') || document.querySelector('.client-id-badge');
-    if (idEl) idEl.textContent = `ID: ${sample.id_cliente}`;
+    const idEls = document.querySelectorAll('#clientDetailId, .client-id, .client-id-badge');
+    idEls.forEach(el => el.textContent = `ID: ${sample.id_cliente}`);
 
-    const vendEl = document.getElementById('clientDetailVendedor') || document.querySelector('.client-vendor');
-    if (vendEl) vendEl.textContent = sample.comercial;
+    const vendEls = document.querySelectorAll('#clientDetailVendedor, .client-vendor, .vendor-name');
+    vendEls.forEach(el => el.textContent = sample.comercial);
 
-    // 3. Calcular Totales y métricas
+    // 3. Calcular Totales, Boletas y Mix de productos
     let totalFacturacion = 0;
     let totalCantidad = 0;
-    let totalBoletas = rows.length;
+    let uniqueFacturas = new Set(rows.map(r => r.factura).filter(f => f && f !== 'S/F'));
+    let numBoletas = uniqueFacturas.size > 0 ? uniqueFacturas.size : rows.length;
 
     let revByMonth = {};
+    let prodStats = {}; 
     let mixSet = new Set();
 
     rows.forEach(r => {
@@ -718,23 +726,26 @@ function searchClient() {
         if (r.mes) {
             revByMonth[r.mes] = (revByMonth[r.mes] || 0) + r.facturacion;
         }
-        if (r.producto) mixSet.add(r.producto);
+        if (r.producto) {
+            mixSet.add(r.producto);
+            prodStats[r.producto] = (prodStats[r.producto] || 0) + r.facturacion;
+        }
     });
 
-    const ticketPromedio = totalBoletas > 0 ? totalFacturacion / totalBoletas : 0;
+    const ticketPromedio = numBoletas > 0 ? totalFacturacion / numBoletas : 0;
 
-    // 4. Inyectar valores en los KPIs superiores
-    const setVal = (selectors, value) => {
-        selectors.forEach(sel => {
-            const el = document.getElementById(sel) || document.querySelector('.' + sel);
-            if (el) el.textContent = value;
+    // 4. Inyectar valores superiores (Mix, Ticket Prom., Total)
+    const setValByIdOrClass = (ids, val) => {
+        ids.forEach(id => {
+            const el = document.getElementById(id) || document.querySelector('.' + id);
+            if (el) el.textContent = val;
         });
     };
 
-    setVal(['clientTotalRevenue', 'kpiTotalRevenue', 'clientTotalFacturacion'], formatCurrency(totalFacturacion));
-    setVal(['clientTicketProm', 'ticketPromedio'], formatCurrency(ticketPromedio));
-    setVal(['clientTotalBoletas', 'totalBoletas'], `${totalBoletas} boletas detected`);
-    setVal(['clientMixCount', 'mixCount', 'clientMix'], mixSet.size);
+    setValByIdOrClass(['clientTotalRevenue', 'kpiTotalRevenue', 'clientTotalFacturacion', 'totalRevenue'], formatCurrency(totalFacturacion));
+    setValByIdOrClass(['clientTicketProm', 'ticketPromedio'], formatCurrency(ticketPromedio));
+    setValByIdOrClass(['clientTotalBoletas', 'totalBoletas'], `(${numBoletas} bol.)`);
+    setValByIdOrClass(['clientMixCount', 'mixCount', 'clientMix'], mixSet.size);
 
     // 5. Renderizar el gráfico de barras "Evolución Mensual de Compras"
     const months = Object.keys(revByMonth).sort();
@@ -770,7 +781,23 @@ function searchClient() {
         });
     }
 
-    // 6. Forzar la visualización de todos los contenedores ocultos en iPhone
+    // 6. Rellenar la tabla inferior "Detalle de Productos Consumidos"
+    const tbody = document.querySelector('#clientDetailTable tbody') || document.querySelector('#clientSearchView table tbody') || document.querySelector('#clientSearchView .table tbody');
+    if (tbody) {
+        tbody.innerHTML = '';
+        Object.entries(prodStats)
+            .sort((a, b) => b[1] - a[1])
+            .forEach(([prod, total]) => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${prod}</td>
+                    <td style="color:var(--success); font-weight:600;">${formatCurrency(total)}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+    }
+
+    // 7. Forzar la visualización de contenedores ocultos en iPhone
     document.querySelectorAll('#clientSearchView .hidden, #clientResultContainer.hidden').forEach(el => {
         el.classList.remove('hidden');
     });
