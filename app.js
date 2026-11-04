@@ -6,6 +6,9 @@ let rawGlobalData = [];
 let globalData = [];
 let currentView = 'dashboard';
 let lockedComercial = null;
+let clientHistoryChartInst = null;
+let monthlyRevenueChartInst = null;
+let comercialRevenueChartInst = null;
 
 const COMERCIAL_MAPPING = {
     '24': 'MARIANO',
@@ -38,14 +41,12 @@ const DB_NAME = 'SalesDB_Tucuman_v1';
 const STORE_NAME = 'salesStore';
 
 function saveToDB(data) {
-    // 1. Guardar en LocalStorage (Respaldo infalible y rápido para iOS / iPhone)
     try {
         localStorage.setItem('sales_tucuman_backup', JSON.stringify(data));
     } catch (e) {
         console.warn('No se pudo guardar en LocalStorage:', e);
     }
 
-    // 2. Guardar en IndexedDB
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = (e) => {
         const db = e.target.result;
@@ -62,7 +63,6 @@ function saveToDB(data) {
 }
 
 function loadFromDB() {
-    // 1. Intentar primero leer del LocalStorage (evita bloqueos en modo privado o restricciones de Safari)
     try {
         const localBackup = localStorage.getItem('sales_tucuman_backup');
         if (localBackup) {
@@ -76,7 +76,6 @@ function loadFromDB() {
         console.log('Error al leer LocalStorage, intentando IndexedDB...', e);
     }
 
-    // 2. Si no hay backup local, intentar IndexedDB
     const request = indexedDB.open(DB_NAME, 1);
     request.onupgradeneeded = (e) => {
         const db = e.target.result;
@@ -131,7 +130,6 @@ const REMOTE_DATA_URL = 'https://marianolamarquevg-droid.github.io/dashboard-tuc
 
 async function checkRemoteData() {
     try {
-        // Cabeceras anti-caché estrictas para Safari/iOS
         const response = await fetch(REMOTE_DATA_URL + '?t=' + new Date().getTime(), {
             cache: 'no-store',
             headers: { 'Pragma': 'no-cache', 'Cache-Control': 'no-cache' }
@@ -166,6 +164,7 @@ async function checkRemoteData() {
 function updateMonthFilter() {
     let allMonthsSet = new Set(rawGlobalData.map(d => d.mes));
     const monthSelect = document.getElementById('monthFilter');
+    if (!monthSelect) return;
     monthSelect.innerHTML = '<option value="ALL">Todos los Meses</option>';
     monthSelect.innerHTML += '<option value="LAST_2">Últimos 2 Meses</option>';
     monthSelect.innerHTML += '<option value="LAST_3">Últimos 3 Meses</option>';
@@ -189,9 +188,13 @@ function updateVendedorFilter() {
         selectorOptions += `<option value="${v}">${v}</option>`;
     });
     
-    vendedorSelect.innerHTML = options;
-    comercialSelector.innerHTML = selectorOptions;
-    vendedorSelect.classList.remove('hidden');
+    if (vendedorSelect) {
+        vendedorSelect.innerHTML = options;
+        vendedorSelect.classList.remove('hidden');
+    }
+    if (comercialSelector) {
+        comercialSelector.innerHTML = selectorOptions;
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -221,8 +224,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 dataStatus.className = 'status-badge empty';
                 uploadOverlay.classList.remove('hidden');
                 document.querySelectorAll('.sidebar nav a').forEach(l => l.classList.remove('active'));
-                document.querySelector(`[data-view="dashboard"]`).classList.add('active');
-                Object.values(views).forEach(v => v.classList.add('hidden'));
+                const dashNav = document.querySelector(`[data-view="dashboard"]`);
+                if (dashNav) dashNav.classList.add('active');
+                Object.values(views).forEach(v => { if (v) v.classList.add('hidden'); });
             }
         });
     }
@@ -232,8 +236,12 @@ document.addEventListener('DOMContentLoaded', () => {
         btnExport.addEventListener('click', exportDataForMobile);
     }
     
-    document.getElementById('monthFilter').addEventListener('change', applyFilters);
-    document.getElementById('comercialSelector').addEventListener('change', renderComercialView);
+    const monthFilterEl = document.getElementById('monthFilter');
+    if (monthFilterEl) monthFilterEl.addEventListener('change', applyFilters);
+    
+    const comercialSelEl = document.getElementById('comercialSelector');
+    if (comercialSelEl) comercialSelector.addEventListener('change', renderComercialView);
+    
     const btnExportMix = document.getElementById('btnExportMix');
     if (btnExportMix) btnExportMix.addEventListener('click', exportMixToExcel);
 });
@@ -277,33 +285,38 @@ document.querySelectorAll('.sidebar nav a').forEach(link => {
 function switchView(viewName) {
     currentView = viewName;
     document.querySelectorAll('.sidebar nav a').forEach(l => l.classList.remove('active'));
-    document.querySelector(`[data-view="${viewName}"]`).classList.add('active');
-    Object.values(views).forEach(v => v.classList.add('hidden'));
+    const targetNav = document.querySelector(`[data-view="${viewName}"]`);
+    if (targetNav) targetNav.classList.add('active');
+    Object.values(views).forEach(v => { if (v) v.classList.add('hidden'); });
     
     if (rawGlobalData.length > 0) {
-        uploadOverlay.classList.add('hidden');
-        views[viewName].classList.remove('hidden');
-        if (viewName === 'mix') renderMixView();
-        if (viewName === 'comercial') renderComercialView();
+        if (uploadOverlay) uploadOverlay.classList.add('hidden');
+        if (views[viewName]) views[viewName].classList.remove('hidden');
+        if (viewName === 'mix' && typeof renderMixView === 'function') renderMixView();
+        if (viewName === 'comercial' && typeof renderComercialView === 'function') renderComercialView();
     } else {
-        uploadOverlay.classList.remove('hidden');
+        if (uploadOverlay) uploadOverlay.classList.remove('hidden');
     }
 }
 
 // Excel Processing
-uploadBox.addEventListener('dragover', (e) => { e.preventDefault(); uploadBox.classList.add('dragover'); });
-uploadBox.addEventListener('dragleave', () => { uploadBox.classList.remove('dragover'); });
-uploadBox.addEventListener('drop', (e) => {
-    e.preventDefault();
-    uploadBox.classList.remove('dragover');
-    handleFiles(e.dataTransfer.files);
-});
-fileInput.addEventListener('change', function() { handleFiles(this.files); });
+if (uploadBox) {
+    uploadBox.addEventListener('dragover', (e) => { e.preventDefault(); uploadBox.classList.add('dragover'); });
+    uploadBox.addEventListener('dragleave', () => { uploadBox.classList.remove('dragover'); });
+    uploadBox.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadBox.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files);
+    });
+}
+if (fileInput) {
+    fileInput.addEventListener('change', function() { handleFiles(this.files); });
+}
 
 function handleFiles(files) {
     if (files.length > 0) {
         const file = files[0];
-        dataStatus.textContent = 'Procesando...';
+        if (dataStatus) dataStatus.textContent = 'Procesando...';
         const reader = new FileReader();
         reader.onload = (e) => processExcel(new Uint8Array(e.target.result));
         reader.readAsArrayBuffer(file);
@@ -315,15 +328,6 @@ function normalizeHeader(header) {
     return header.toString().toLowerCase().trim()
         .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
         .replace(/[^a-z0-9 ]/g, '');
-}
-
-function normalizeName(name) {
-    if (!name) return '';
-    return name.toString().toLowerCase()
-        .replace(/,/g, '')
-        .replace(/\s+/g, ' ')
-        .replace(/á/g,'a').replace(/é/g,'e').replace(/í/g,'i').replace(/ó/g,'o').replace(/ú/g,'u')
-        .trim();
 }
 
 function findCol(headers, possibleNames, excludeKeywords = []) {
@@ -415,12 +419,16 @@ function processExcel(data) {
         saveToDB(rawGlobalData);
         updateMonthFilter();
         updateVendedorFilter();
-        dataStatus.textContent = `Datos Cargados (${globalData.length} filas)`;
-        dataStatus.className = 'status-badge loaded';
-        document.getElementById('btnClearData').classList.remove('hidden');
-        document.getElementById('btnExportRemote').classList.remove('hidden');
-        uploadOverlay.classList.add('hidden');
-        views[currentView].classList.remove('hidden');
+        if (dataStatus) {
+            dataStatus.textContent = `Datos Cargados (${globalData.length} filas)`;
+            dataStatus.className = 'status-badge loaded';
+        }
+        const btnClr = document.getElementById('btnClearData');
+        if (btnClr) btnClr.classList.remove('hidden');
+        const btnExp = document.getElementById('btnExportRemote');
+        if (btnExp) btnExp.classList.remove('hidden');
+        if (uploadOverlay) uploadOverlay.classList.add('hidden');
+        if (views[currentView]) views[currentView].classList.remove('hidden');
         renderDashboard();
     } catch (e) {
         console.error(e);
@@ -431,10 +439,6 @@ function processExcel(data) {
 // Rendering
 const formatCurrency = (val) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(val);
 const formatNumber = (val) => new Intl.NumberFormat('es-AR').format(val);
-
-let clientHistoryChartInst = null;
-let monthlyRevenueChartInst = null;
-let comercialRevenueChartInst = null;
 
 function renderDashboard() {
     let totalRevenue = 0;
@@ -454,50 +458,62 @@ function renderDashboard() {
         prodStats[row.producto] = (prodStats[row.producto] || 0) + row.cantidad;
     });
 
-    document.getElementById('kpiTotalRevenue').textContent = formatCurrency(totalRevenue);
-    document.getElementById('kpiTotalClients').textContent = formatNumber(clients.size);
-    document.getElementById('kpiTotalItems').textContent = formatNumber(totalItems);
+    const revEl = document.getElementById('kpiTotalRevenue');
+    if (revEl) revEl.textContent = formatCurrency(totalRevenue);
+    const cliEl = document.getElementById('kpiTotalClients');
+    if (cliEl) cliEl.textContent = formatNumber(clients.size);
+    const itmEl = document.getElementById('kpiTotalItems');
+    if (itmEl) itmEl.textContent = formatNumber(totalItems);
     
     let topComercial = Object.entries(comercialStats).sort((a,b) => b[1]-a[1])[0];
-    document.getElementById('kpiTopComercial').textContent = topComercial ? topComercial[0] : '-';
+    const topComEl = document.getElementById('kpiTopComercial');
+    if (topComEl) topComEl.textContent = topComercial ? topComercial[0] : '-';
+    
     let topClient = Object.entries(clientStats).sort((a,b) => b[1]-a[1])[0];
-    document.getElementById('kpiTopClient').textContent = topClient ? topClient[0] : '-';
+    const topCliEl = document.getElementById('kpiTopClient');
+    if (topCliEl) topCliEl.textContent = topClient ? topClient[0] : '-';
+    
     let topProduct = Object.entries(prodStats).sort((a,b) => b[1]-a[1])[0];
-    document.getElementById('kpiTopProduct').textContent = topProduct ? topProduct[0] : '-';
+    const topProdEl = document.getElementById('kpiTopProduct');
+    if (topProdEl) topProdEl.textContent = topProduct ? topProduct[0] : '-';
 
     // Tables
     const tb = document.querySelector('#mainDetailTable tbody');
-    tb.innerHTML = '';
-    let groupedData = {};
-    let comercialClientStats = {};
-    
-    globalData.forEach(row => {
-        let key = row.id_cliente + '|' + row.producto;
-        if (!groupedData[key]) {
-            groupedData[key] = { id: row.id_cliente, cliente: row.cliente, comercial: row.comercial, producto: row.producto, cantidad: 0, total: 0 };
-        }
-        groupedData[key].cantidad += row.cantidad;
-        groupedData[key].total += row.facturacion;
+    if (tb) {
+        tb.innerHTML = '';
+        let groupedData = {};
+        let comercialClientStats = {};
+        
+        globalData.forEach(row => {
+            let key = row.id_cliente + '|' + row.producto;
+            if (!groupedData[key]) {
+                groupedData[key] = { id: row.id_cliente, cliente: row.cliente, comercial: row.comercial, producto: row.producto, cantidad: 0, total: 0 };
+            }
+            groupedData[key].cantidad += row.cantidad;
+            groupedData[key].total += row.facturacion;
 
-        if (!comercialClientStats[row.comercial]) comercialClientStats[row.comercial] = {};
-        comercialClientStats[row.comercial][row.cliente] = (comercialClientStats[row.comercial][row.cliente] || 0) + row.facturacion;
-    });
-
-    Object.values(groupedData).sort((a,b) => b.total - a.total).slice(0, 100).forEach(item => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td><span class="badge" style="background:rgba(16, 185, 129, 0.1); color:var(--success); border:none;">${item.cliente}</span></td><td>${item.id}</td><td>${item.comercial}</td><td>${item.producto}</td><td>${formatNumber(item.cantidad)}</td><td style="color:var(--success)">${formatCurrency(item.total)}</td>`;
-        tb.appendChild(tr);
-    });
-
-    const tbComClients = document.querySelector('#topClientsComercialTable tbody');
-    tbComClients.innerHTML = '';
-    Object.keys(comercialClientStats).forEach(com => {
-        Object.entries(comercialClientStats[com]).sort((a,b) => b[1]-a[1]).forEach(cl => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${com}</td><td>${cl[0]}</td><td style="color:var(--primary)">${formatCurrency(cl[1])}</td>`;
-            tbComClients.appendChild(tr);
+            if (!comercialClientStats[row.comercial]) comercialClientStats[row.comercial] = {};
+            comercialClientStats[row.comercial][row.cliente] = (comercialClientStats[row.comercial][row.cliente] || 0) + row.facturacion;
         });
-    });
+
+        Object.values(groupedData).sort((a,b) => b.total - a.total).slice(0, 100).forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td><span class="badge" style="background:rgba(16, 185, 129, 0.1); color:var(--success); border:none;">${item.cliente}</span></td><td>${item.id}</td><td>${item.comercial}</td><td>${item.producto}</td><td>${formatNumber(item.cantidad)}</td><td style="color:var(--success)">${formatCurrency(item.total)}</td>`;
+            tb.appendChild(tr);
+        });
+
+        const tbComClients = document.querySelector('#topClientsComercialTable tbody');
+        if (tbComClients) {
+            tbComClients.innerHTML = '';
+            Object.keys(comercialClientStats).forEach(com => {
+                Object.entries(comercialClientStats[com]).sort((a,b) => b[1]-a[1]).forEach(cl => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `<td>${com}</td><td>${cl[0]}</td><td style="color:var(--primary)">${formatCurrency(cl[1])}</td>`;
+                    tbComClients.appendChild(tr);
+                });
+            });
+        }
+    }
 
     renderCharts(comercialStats);
     renderProductTrend();
@@ -509,29 +525,36 @@ function renderCharts(comercialStats) {
     rawGlobalData.forEach(r => { revByMonth[r.mes] = (revByMonth[r.mes] || 0) + r.facturacion; });
     let months = Object.keys(revByMonth).sort();
     
-    if (monthlyRevenueChartInst) monthlyRevenueChartInst.destroy();
-    monthlyRevenueChartInst = new Chart(document.getElementById('monthlyRevenueChart'), {
-        type: 'line',
-        data: {
-            labels: months,
-            datasets: [{ label: 'Facturación', data: months.map(m => revByMonth[m]), borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', fill: true, tension: 0.3 }]
-        },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-    });
+    const monthlyCanvas = document.getElementById('monthlyRevenueChart');
+    if (monthlyCanvas && window.Chart) {
+        if (monthlyRevenueChartInst) monthlyRevenueChartInst.destroy();
+        monthlyRevenueChartInst = new Chart(monthlyCanvas, {
+            type: 'line',
+            data: {
+                labels: months,
+                datasets: [{ label: 'Facturación', data: months.map(m => revByMonth[m]), borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', fill: true, tension: 0.3 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+    }
 
-    if (comercialRevenueChartInst) comercialRevenueChartInst.destroy();
-    comercialRevenueChartInst = new Chart(document.getElementById('comercialRevenueChart'), {
-        type: 'doughnut',
-        data: {
-            labels: Object.keys(comercialStats),
-            datasets: [{ data: Object.values(comercialStats), backgroundColor: ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981'] }]
-        },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '70%' }
-    });
+    const comercialCanvas = document.getElementById('comercialRevenueChart');
+    if (comercialCanvas && window.Chart) {
+        if (comercialRevenueChartInst) comercialRevenueChartInst.destroy();
+        comercialRevenueChartInst = new Chart(comercialCanvas, {
+            type: 'doughnut',
+            data: {
+                labels: Object.keys(comercialStats),
+                datasets: [{ data: Object.values(comercialStats), backgroundColor: ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981'] }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, cutout: '70%' }
+        });
+    }
 }
 
 function renderProductTrend() {
     const tbProd = document.querySelector('#productsTrendTable tbody');
+    if (!tbProd) return;
     tbProd.innerHTML = '';
     let allMonths = [...new Set(rawGlobalData.map(r => r.mes))].sort();
     let currentM = allMonths[allMonths.length - 1];
@@ -560,6 +583,7 @@ function showProductEvolutionDetail(productName) {
     const modal = document.getElementById('productDropModal');
     const title = document.getElementById('modalProductTitle');
     const tbody = document.querySelector('#productDropTable tbody');
+    if (!modal || !tbody) return;
     
     title.textContent = `Evolución: ${productName}`;
     tbody.innerHTML = '';
@@ -606,49 +630,51 @@ function showProductEvolutionDetail(productName) {
 
 window.showProductEvolutionDetail = showProductEvolutionDetail;
 
-// Search
 // ==========================================
-// BÚSQUEDA Y DETALLE DE CLIENTES (CORREGIDO Y BLINDADO)
+// BÚSQUEDA Y DETALLE DE CLIENTES (BLINDADO Y CON GRÁFICO DE BARRAS)
 // ==========================================
-document.getElementById('clientSearchInput').addEventListener('input', (e) => {
-    const term = e.target.value.toLowerCase().trim();
-    const sug = document.getElementById('searchSuggestions');
-    if (!sug) return;
-    
-    if (term.length < 2) { 
-        sug.classList.add('hidden'); 
-        return; 
-    }
-    
-    const clients = new Map();
-    rawGlobalData.forEach(r => {
-        const name = r.cliente || '';
-        const id = r.id_cliente || '';
-        if (name.toLowerCase().includes(term) || id.toLowerCase().includes(term)) {
-            clients.set(id || name, name);
-        }
-    });
-    
-    sug.innerHTML = '';
-    Array.from(clients.entries()).slice(0, 10).forEach(([id, name]) => {
-        const d = document.createElement('div'); 
-        d.className = 'suggestion-item';
-        d.innerHTML = `<span class="client-id">${id}</span><span>${name}</span>`;
-        d.onclick = () => { 
-            document.getElementById('clientSearchInput').value = name; 
+const clientSearchInput = document.getElementById('clientSearchInput');
+if (clientSearchInput) {
+    clientSearchInput.addEventListener('input', (e) => {
+        const term = e.target.value.toLowerCase().trim();
+        const sug = document.getElementById('searchSuggestions');
+        if (!sug) return;
+        
+        if (term.length < 2) { 
             sug.classList.add('hidden'); 
-            searchClient(); 
-        };
-        sug.appendChild(d);
+            return; 
+        }
+        
+        const clients = new Map();
+        rawGlobalData.forEach(r => {
+            const name = r.cliente || '';
+            const id = r.id_cliente || '';
+            if (name.toLowerCase().includes(term) || id.toLowerCase().includes(term)) {
+                clients.set(id || name, name);
+            }
+        });
+        
+        sug.innerHTML = '';
+        Array.from(clients.entries()).slice(0, 10).forEach(([id, name]) => {
+            const d = document.createElement('div'); 
+            d.className = 'suggestion-item';
+            d.innerHTML = `<span class="client-id">${id}</span><span>${name}</span>`;
+            d.onclick = () => { 
+                clientSearchInput.value = name; 
+                sug.classList.add('hidden'); 
+                searchClient(); 
+            };
+            sug.appendChild(d);
+        });
+        sug.classList.toggle('hidden', sug.innerHTML === '');
     });
-    sug.classList.toggle('hidden', sug.innerHTML === '');
-});
-
-// Variable global para la instancia del gráfico del cliente
-let clientHistoryChartInst = null;
+}
 
 function searchClient() {
-    const term = document.getElementById('clientSearchInput').value.toLowerCase().trim();
+    const inputEl = document.getElementById('clientSearchInput');
+    if (!inputEl) return;
+    
+    const term = inputEl.value.toLowerCase().trim();
     if (!term) return;
 
     // 1. Filtrar filas del cliente
@@ -683,7 +709,6 @@ function searchClient() {
     let totalCantidad = 0;
     let totalBoletas = rows.length;
 
-    // Agrupar facturación por mes para el gráfico
     let revByMonth = {};
     let mixSet = new Set();
 
@@ -709,9 +734,9 @@ function searchClient() {
     setVal(['clientTotalRevenue', 'kpiTotalRevenue', 'clientTotalFacturacion'], formatCurrency(totalFacturacion));
     setVal(['clientTicketProm', 'ticketPromedio'], formatCurrency(ticketPromedio));
     setVal(['clientTotalBoletas', 'totalBoletas'], `${totalBoletas} boletas detected`);
-    setVal(['clientMixCount', 'mixCount'], mixSet.size);
+    setVal(['clientMixCount', 'mixCount', 'clientMix'], mixSet.size);
 
-    // 5. RENDERIZAR EL GRÁFICO DE BARRAS "Evolución Mensual de Compras"
+    // 5. Renderizar el gráfico de barras "Evolución Mensual de Compras"
     const months = Object.keys(revByMonth).sort();
     const revenues = months.map(m => revByMonth[m]);
 
@@ -727,7 +752,7 @@ function searchClient() {
                 datasets: [{
                     label: 'Compras',
                     data: revenues,
-                    backgroundColor: '#a855f7', // Color morado/violeta de las barras
+                    backgroundColor: '#a855f7',
                     borderRadius: 4
                 }]
             },
@@ -751,4 +776,35 @@ function searchClient() {
     });
 
     if (window.lucide) lucide.createIcons();
+}
+
+function applyFilters() {
+    const vFilter = document.getElementById('vendedorFilter').value;
+    const mFilter = document.getElementById('monthFilter').value;
+    
+    globalData = rawGlobalData.filter(row => {
+        let matchV = (vFilter === 'ALL' || row.comercial === vFilter);
+        let matchM = true;
+        
+        if (mFilter !== 'ALL') {
+            if (mFilter.startsWith('LAST_')) {
+                const count = parseInt(mFilter.split('_')[1]);
+                const allMonths = [...new Set(rawGlobalData.map(r => r.mes))].sort().slice(-count);
+                matchM = allMonths.includes(row.mes);
+            } else {
+                matchM = (row.mes === mFilter);
+            }
+        }
+        
+        return matchV && matchM;
+    });
+    
+    renderDashboard();
+    
+    if (currentView === 'comercial' && typeof renderComercialView === 'function') {
+        renderComercialView();
+    }
+    if (currentView === 'mix' && typeof renderMixView === 'function') {
+        renderMixView();
+    }
 }
