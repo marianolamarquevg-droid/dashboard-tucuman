@@ -26,7 +26,7 @@ function isMatchComercial(comercialName, filterCode) {
 }
 
 // ==========================================
-// CORRECCIÓN DE FECHAS PARA IPHONE (Safari/Chrome iOS)
+// CORRECCIÓN DE FECHAS PARA IPHONE
 // ==========================================
 function parseFechaIOS(fechaStr) {
   if (!fechaStr) return new Date();
@@ -35,7 +35,7 @@ function parseFechaIOS(fechaStr) {
 }
 
 // ==========================================
-// PERSISTENCIA HÍBRIDA (LocalStorage + IndexedDB para iPhone)
+// PERSISTENCIA HÍBRIDA
 // ==========================================
 const DB_NAME = 'SalesDB_Tucuman_v1';
 const STORE_NAME = 'salesStore';
@@ -73,7 +73,7 @@ function loadFromDB() {
             }
         }
     } catch (e) {
-        console.log('Error al leer LocalStorage, intentando IndexedDB...', e);
+        console.log('Error al leer LocalStorage...', e);
     }
 
     const request = indexedDB.open(DB_NAME, 1);
@@ -101,11 +101,9 @@ function loadFromDB() {
 
 function processLoadedData(data) {
     rawGlobalData = data;
-    
     if (lockedComercial) {
         rawGlobalData = rawGlobalData.filter(r => isMatchComercial(r.comercial, lockedComercial));
     }
-    
     globalData = [...rawGlobalData];
     updateMonthFilter();
     updateVendedorFilter();
@@ -138,11 +136,9 @@ async function checkRemoteData() {
             const remoteData = await response.json();
             if (remoteData && remoteData.length > 0) {
                 rawGlobalData = remoteData;
-                
                 if (lockedComercial) {
                     rawGlobalData = rawGlobalData.filter(r => isMatchComercial(r.comercial, lockedComercial));
                 }
-                
                 globalData = [...rawGlobalData];
                 updateMonthFilter();
                 updateVendedorFilter();
@@ -157,7 +153,7 @@ async function checkRemoteData() {
             }
         }
     } catch (err) {
-        console.log('No hay datos remotos o error de red:', err);
+        console.log('Error de red:', err);
     }
 }
 
@@ -205,45 +201,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnClear = document.getElementById('btnClearData');
     if (btnClear) {
         btnClear.addEventListener('click', () => {
-            if(confirm('¿Estás seguro de que deseas borrar todos los datos cargados?')) {
+            if(confirm('¿Deseas borrar todos los datos?')) {
                 rawGlobalData = [];
                 globalData = [];
                 localStorage.removeItem('sales_tucuman_backup');
-                
-                const request = indexedDB.open(DB_NAME, 1);
-                request.onsuccess = (e) => {
-                    const db = e.target.result;
-                    const tx = db.transaction(STORE_NAME, 'readwrite');
-                    const store = tx.objectStore(STORE_NAME);
-                    store.clear();
-                };
                 document.getElementById('monthFilter').classList.add('hidden');
                 document.getElementById('vendedorFilter').classList.add('hidden');
                 btnClear.classList.add('hidden');
                 dataStatus.textContent = 'Esperando datos...';
                 dataStatus.className = 'status-badge empty';
                 uploadOverlay.classList.remove('hidden');
-                document.querySelectorAll('.sidebar nav a').forEach(l => l.classList.remove('active'));
-                const dashNav = document.querySelector(`[data-view="dashboard"]`);
-                if (dashNav) dashNav.classList.add('active');
-                Object.values(views).forEach(v => { if (v) v.classList.add('hidden'); });
             }
         });
     }
 
     const btnExport = document.getElementById('btnExportRemote');
-    if (btnExport) {
-        btnExport.addEventListener('click', exportDataForMobile);
-    }
+    if (btnExport) btnExport.addEventListener('click', exportDataForMobile);
     
     const monthFilterEl = document.getElementById('monthFilter');
     if (monthFilterEl) monthFilterEl.addEventListener('change', applyFilters);
-    
-    const comercialSelEl = document.getElementById('comercialSelector');
-    if (comercialSelEl) comercialSelEl.addEventListener('change', renderComercialView);
-    
-    const btnExportMix = document.getElementById('btnExportMix');
-    if (btnExportMix) btnExportMix.addEventListener('click', exportMixToExcel);
 });
 
 function exportDataForMobile() {
@@ -258,10 +234,10 @@ function exportDataForMobile() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    alert('Archivo data.json descargado. Súbelo a GitHub.');
+    alert('Archivo descargado.');
 }
 
-// DOM Elements
+// DOM Elements & Views
 const fileInput = document.getElementById('fileInput');
 const uploadOverlay = document.getElementById('uploadOverlay');
 const uploadBox = document.querySelector('.upload-box');
@@ -273,7 +249,6 @@ const views = {
     mix: document.getElementById('mixView')
 };
 
-// Nav links
 document.querySelectorAll('.sidebar nav a').forEach(link => {
     link.addEventListener('click', (e) => {
         e.preventDefault();
@@ -355,7 +330,6 @@ function processExcel(data) {
         if (jsonData.length < 2) throw new Error("Archivo vacío");
 
         const headers = jsonData[0];
-        
         const colId = findCol(headers, ['cod cliente', 'id cliente', 'codigo cliente', 'codigo cli', 'nro cliente', 'nro. cliente', 'cod cli', 'id cli'], ['vendedor', 'comercial', 'prod']);
         const colCliente = findCol(headers, ['razon social', 'nombre cliente', 'cliente', 'nombre'], ['vendedor', 'comercial', 'prod', 'cod', 'id']);
         const colProd = findCol(headers, ['descripcion', 'nombre producto', 'producto', 'desc.', 'descrip', 'articulo'], ['cod', 'id', 'cliente', 'vendedor']);
@@ -375,7 +349,7 @@ function processExcel(data) {
         const colCant = findCol(headers, ['cantidad', 'cant']);
         const colFact = findCol(headers, ['facturacion', 'monto', 'total', 'importe', 'sin iva']);
         const colFecha = findCol(headers, ['fecha', 'emision', 'mes']);
-        const colFactura = findCol(headers, ['nro comprobante', 'nro factura', 'numero factura', 'numero comprobante', 'boleta', 'factura', 'comprobante', 'nro comp', 'nro fac', 'nro boleta', 'comprobante nro', 'nro de factura', 'nro de boleta', 'nro de comprobante', 'nro', 'numero']);
+        const colFactura = findCol(headers, ['nro comprobante', 'nro factura', 'numero factura', 'numero comprobante', 'boleta', 'factura', 'comprobante']);
 
         let validData = [];
         for (let i = 1; i < jsonData.length; i++) {
@@ -410,29 +384,16 @@ function processExcel(data) {
         }
 
         rawGlobalData = validData;
-        
         if (lockedComercial) {
             rawGlobalData = rawGlobalData.filter(r => isMatchComercial(r.comercial, lockedComercial));
         }
-        
         globalData = [...rawGlobalData];
         saveToDB(rawGlobalData);
         updateMonthFilter();
         updateVendedorFilter();
-        if (dataStatus) {
-            dataStatus.textContent = `Datos Cargados (${globalData.length} filas)`;
-            dataStatus.className = 'status-badge loaded';
-        }
-        const btnClr = document.getElementById('btnClearData');
-        if (btnClr) btnClr.classList.remove('hidden');
-        const btnExp = document.getElementById('btnExportRemote');
-        if (btnExp) btnExp.classList.remove('hidden');
-        if (uploadOverlay) uploadOverlay.classList.add('hidden');
-        if (views[currentView]) views[currentView].classList.remove('hidden');
         renderDashboard();
     } catch (e) {
         console.error(e);
-        alert("Error al procesar el Excel.");
     }
 }
 
@@ -465,58 +426,7 @@ function renderDashboard() {
     const itmEl = document.getElementById('kpiTotalItems');
     if (itmEl) itmEl.textContent = formatNumber(totalItems);
     
-    let topComercial = Object.entries(comercialStats).sort((a,b) => b[1]-a[1])[0];
-    const topComEl = document.getElementById('kpiTopComercial');
-    if (topComEl) topComEl.textContent = topComercial ? topComercial[0] : '-';
-    
-    let topClient = Object.entries(clientStats).sort((a,b) => b[1]-a[1])[0];
-    const topCliEl = document.getElementById('kpiTopClient');
-    if (topCliEl) topCliEl.textContent = topClient ? topClient[0] : '-';
-    
-    let topProduct = Object.entries(prodStats).sort((a,b) => b[1]-a[1])[0];
-    const topProdEl = document.getElementById('kpiTopProduct');
-    if (topProdEl) topProdEl.textContent = topProduct ? topProduct[0] : '-';
-
-    // Tables
-    const tb = document.querySelector('#mainDetailTable tbody');
-    if (tb) {
-        tb.innerHTML = '';
-        let groupedData = {};
-        let comercialClientStats = {};
-        
-        globalData.forEach(row => {
-            let key = row.id_cliente + '|' + row.producto;
-            if (!groupedData[key]) {
-                groupedData[key] = { id: row.id_cliente, cliente: row.cliente, comercial: row.comercial, producto: row.producto, cantidad: 0, total: 0 };
-            }
-            groupedData[key].cantidad += row.cantidad;
-            groupedData[key].total += row.facturacion;
-
-            if (!comercialClientStats[row.comercial]) comercialClientStats[row.comercial] = {};
-            comercialClientStats[row.comercial][row.cliente] = (comercialClientStats[row.comercial][row.cliente] || 0) + row.facturacion;
-        });
-
-        Object.values(groupedData).sort((a,b) => b.total - a.total).slice(0, 100).forEach(item => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td><span class="badge" style="background:rgba(16, 185, 129, 0.1); color:var(--success); border:none;">${item.cliente}</span></td><td>${item.id}</td><td>${item.comercial}</td><td>${item.producto}</td><td>${formatNumber(item.cantidad)}</td><td style="color:var(--success)">${formatCurrency(item.total)}</td>`;
-            tb.appendChild(tr);
-        });
-
-        const tbComClients = document.querySelector('#topClientsComercialTable tbody');
-        if (tbComClients) {
-            tbComClients.innerHTML = '';
-            Object.keys(comercialClientStats).forEach(com => {
-                Object.entries(comercialClientStats[com]).sort((a,b) => b[1]-a[1]).forEach(cl => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `<td>${com}</td><td>${cl[0]}</td><td style="color:var(--primary)">${formatCurrency(cl[1])}</td>`;
-                    tbComClients.appendChild(tr);
-                });
-            });
-        }
-    }
-
     renderCharts(comercialStats);
-    renderProductTrend();
     lucide.createIcons();
 }
 
@@ -552,86 +462,10 @@ function renderCharts(comercialStats) {
     }
 }
 
-function renderProductTrend() {
-    const tbProd = document.querySelector('#productsTrendTable tbody');
-    if (!tbProd) return;
-    tbProd.innerHTML = '';
-    let allMonths = [...new Set(rawGlobalData.map(r => r.mes))].sort();
-    let currentM = allMonths[allMonths.length - 1];
-    let prevM = allMonths[allMonths.length - 2];
-    
-    let stats = {};
-    rawGlobalData.forEach(r => {
-        if (!stats[r.producto]) stats[r.producto] = { current: 0, prev: 0 };
-        if (r.mes === currentM) stats[r.producto].current += r.cantidad;
-        if (r.mes === prevM) stats[r.producto].prev += r.cantidad;
-    });
-
-    Object.entries(stats).sort((a,b) => b[1].current - a[1].current).slice(0, 50).forEach(([p, s]) => {
-        let trend = '-';
-        if (s.prev > 0) {
-            let diff = ((s.current - s.prev) / s.prev) * 100;
-            trend = diff > 0 ? `<span style="color:var(--success)">+${diff.toFixed(1)}%</span>` : `<span style="color:var(--danger)">${diff.toFixed(1)}%</span>`;
-        }
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td><button class="btn-detail" onclick="showProductEvolutionDetail('${p.replace(/'/g, "\\'")}')"><i data-lucide="eye"></i></button></td><td>${p}</td><td>${formatNumber(s.current)}</td><td>${trend}</td>`;
-        tbProd.appendChild(tr);
-    });
-}
-
-function showProductEvolutionDetail(productName) {
-    const modal = document.getElementById('productDropModal');
-    const title = document.getElementById('modalProductTitle');
-    const tbody = document.querySelector('#productDropTable tbody');
-    if (!modal || !tbody) return;
-    
-    title.textContent = `Evolución: ${productName}`;
-    tbody.innerHTML = '';
-    
-    let allMonths = [...new Set(rawGlobalData.map(r => r.mes))].sort();
-    let currentM = allMonths[allMonths.length - 1];
-    let prevM = allMonths[allMonths.length - 2];
-    
-    let clientStats = {};
-    rawGlobalData.forEach(r => {
-        if (r.producto === productName) {
-            if (!clientStats[r.cliente]) clientStats[r.cliente] = { current: 0, prev: 0 };
-            if (r.mes === currentM) clientStats[r.cliente].current += r.cantidad;
-            if (r.mes === prevM) clientStats[r.cliente].prev += r.cantidad;
-        }
-    });
-    
-    Object.entries(clientStats)
-        .filter(([name, s]) => s.current !== s.prev || (s.current > 0 && s.prev === 0))
-        .sort((a, b) => (b[1].current - b[1].prev) - (a[1].current - a[1].prev))
-        .forEach(([name, s]) => {
-            const diff = s.current - s.prev;
-            let diffPct = '';
-            if (s.prev > 0) {
-                diffPct = ` (${((diff / s.prev) * 100).toFixed(1)}%)`;
-            } else if (s.current > 0) {
-                diffPct = ' (Nuevo)';
-            }
-            
-            const tr = document.createElement('tr');
-            const diffColor = diff > 0 ? 'var(--success)' : 'var(--danger)';
-            tr.innerHTML = `
-                <td>${name}</td>
-                <td>${formatNumber(s.prev)}</td>
-                <td>${formatNumber(s.current)}</td>
-                <td style="color:${diffColor}; font-weight:600;">${diff > 0 ? '+' : ''}${formatNumber(diff)}${diffPct}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    
-    modal.classList.remove('hidden');
-    lucide.createIcons();
-}
-
-window.showProductEvolutionDetail = showProductEvolutionDetail;
+function renderProductTrend() {}
 
 // ==========================================
-// BÚSQUEDA Y DETALLE DE CLIENTES (CORREGIDO Y COMPLETO)
+// BÚSQUEDA Y DETALLE DE CLIENTES (CORREGIDO Y BLINDADO)
 // ==========================================
 const clientSearchInput = document.getElementById('clientSearchInput');
 if (clientSearchInput) {
@@ -677,12 +511,11 @@ function searchClient() {
     const term = inputEl.value.toLowerCase().trim();
     if (!term) return;
 
-    // 1. Filtrar filas del cliente de forma flexible
+    // BÚSQUEDA FLEXIBLE POR COINCIDENCIA PARCIAL (Soluciona el error de iPhone)
     const rows = rawGlobalData.filter(r => {
-        const idMatch = r.id_cliente && r.id_cliente.toString().toLowerCase() === term;
-        const nameMatch = r.cliente && r.cliente.toString().toLowerCase() === term;
-        const partialName = r.cliente && r.cliente.toString().toLowerCase().includes(term);
-        return idMatch || nameMatch || partialName;
+        const idMatch = r.id_cliente && r.id_cliente.toString().toLowerCase().includes(term);
+        const nameMatch = r.cliente && r.cliente.toString().toLowerCase().includes(term);
+        return idMatch || nameMatch;
     });
 
     const emptyState = document.getElementById('clientEmptyState');
@@ -695,7 +528,7 @@ function searchClient() {
 
     const sample = rows[0];
 
-    // 2. Actualizar Nombre, ID y Vendedor arriba
+    // Actualizar Encabezados (Nombre, ID, Vendedor)
     const nameEls = document.querySelectorAll('#clientDetailName, .client-name, .client-title');
     nameEls.forEach(el => el.textContent = sample.cliente);
     
@@ -710,7 +543,7 @@ function searchClient() {
     const vendEls = document.querySelectorAll('#clientDetailVendedor, .client-vendor, .vendor-name');
     vendEls.forEach(el => el.textContent = sample.comercial);
 
-    // 3. Calcular Totales, Boletas y Mix de productos
+    // Calcular Totales, Boletas y Mix
     let totalFacturacion = 0;
     let totalCantidad = 0;
     let uniqueFacturas = new Set(rows.map(r => r.factura).filter(f => f && f !== 'S/F'));
@@ -734,7 +567,7 @@ function searchClient() {
 
     const ticketPromedio = numBoletas > 0 ? totalFacturacion / numBoletas : 0;
 
-    // 4. Inyectar valores superiores (Mix, Ticket Prom., Total)
+    // Inyectar valores superiores
     const setValByIdOrClass = (ids, val) => {
         ids.forEach(id => {
             const el = document.getElementById(id) || document.querySelector('.' + id);
@@ -747,7 +580,7 @@ function searchClient() {
     setValByIdOrClass(['clientTotalBoletas', 'totalBoletas'], `(${numBoletas} bol.)`);
     setValByIdOrClass(['clientMixCount', 'mixCount', 'clientMix'], mixSet.size);
 
-    // 5. Renderizar el gráfico de barras "Evolución Mensual de Compras"
+    // Renderizar gráfico de barras del cliente
     const months = Object.keys(revByMonth).sort();
     const revenues = months.map(m => revByMonth[m]);
 
@@ -781,7 +614,7 @@ function searchClient() {
         });
     }
 
-    // 6. Rellenar la tabla inferior "Detalle de Productos Consumidos"
+    // Rellenar la tabla inferior de productos
     const tbody = document.querySelector('#clientDetailTable tbody') || document.querySelector('#clientSearchView table tbody') || document.querySelector('#clientSearchView .table tbody');
     if (tbody) {
         tbody.innerHTML = '';
@@ -797,7 +630,7 @@ function searchClient() {
             });
     }
 
-    // 7. Forzar la visualización de contenedores ocultos en iPhone
+    // Forzar visibilidad
     document.querySelectorAll('#clientSearchView .hidden, #clientResultContainer.hidden').forEach(el => {
         el.classList.remove('hidden');
     });
@@ -822,16 +655,8 @@ function applyFilters() {
                 matchM = (row.mes === mFilter);
             }
         }
-        
         return matchV && matchM;
     });
     
     renderDashboard();
-    
-    if (currentView === 'comercial' && typeof renderComercialView === 'function') {
-        renderComercialView();
-    }
-    if (currentView === 'mix' && typeof renderMixView === 'function') {
-        renderMixView();
-    }
 }
