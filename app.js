@@ -30,7 +30,9 @@ function isMatchComercial(comercialName, filterCode) {
 // ==========================================
 function parseFechaIOS(fechaStr) {
   if (!fechaStr) return new Date();
-  const isoStr = fechaStr.includes(' ') ? fechaStr.replace(' ', 'T') : fechaStr;
+  if (typeof fechaStr === 'number') return new Date(fechaStr);
+  const str = String(fechaStr);
+  const isoStr = str.includes(' ') ? str.replace(' ', 'T') : str;
   return new Date(isoStr);
 }
 
@@ -220,6 +222,33 @@ document.addEventListener('DOMContentLoaded', () => {
     
     const monthFilterEl = document.getElementById('monthFilter');
     if (monthFilterEl) monthFilterEl.addEventListener('change', applyFilters);
+
+    // SOLUCIÓN 1: Conectar el evento change del filtro de vendedor
+    const vendedorFilterEl = document.getElementById('vendedorFilter');
+    if (vendedorFilterEl) vendedorFilterEl.addEventListener('change', applyFilters);
+
+    const comercialSelectorEl = document.getElementById('comercialSelector');
+    if (comercialSelectorEl) comercialSelectorEl.addEventListener('change', renderComercialView);
+
+    const btnSearchClient = document.getElementById('btnSearchClient');
+    if (btnSearchClient) btnSearchClient.addEventListener('click', searchClient);
+
+    const btnClosePresentation = document.getElementById('btnClosePresentation');
+    if (btnClosePresentation) {
+        btnClosePresentation.addEventListener('click', () => {
+            document.getElementById('clientDetails').classList.add('hidden');
+        });
+    }
+
+    const btnCloseModal = document.getElementById('btnCloseModal');
+    if (btnCloseModal) {
+        btnCloseModal.addEventListener('click', () => {
+            document.getElementById('productDropModal').classList.add('hidden');
+        });
+    }
+
+    const btnExportMix = document.getElementById('btnExportMix');
+    if (btnExportMix) btnExportMix.addEventListener('click', exportMixToExcel);
 });
 
 function exportDataForMobile() {
@@ -267,8 +296,8 @@ function switchView(viewName) {
     if (rawGlobalData.length > 0) {
         if (uploadOverlay) uploadOverlay.classList.add('hidden');
         if (views[viewName]) views[viewName].classList.remove('hidden');
-        if (viewName === 'mix' && typeof renderMixView === 'function') renderMixView();
-        if (viewName === 'comercial' && typeof renderComercialView === 'function') renderComercialView();
+        if (viewName === 'mix') renderMixView();
+        if (viewName === 'comercial') renderComercialView();
     } else {
         if (uploadOverlay) uploadOverlay.classList.remove('hidden');
     }
@@ -391,6 +420,12 @@ function processExcel(data) {
         saveToDB(rawGlobalData);
         updateMonthFilter();
         updateVendedorFilter();
+        dataStatus.textContent = `Datos Cargados (${globalData.length} filas)`;
+        dataStatus.className = 'status-badge loaded';
+        document.getElementById('btnClearData').classList.remove('hidden');
+        document.getElementById('btnExportRemote').classList.remove('hidden');
+        uploadOverlay.classList.add('hidden');
+        views[currentView].classList.remove('hidden');
         renderDashboard();
     } catch (e) {
         console.error(e);
@@ -399,7 +434,7 @@ function processExcel(data) {
 
 // Rendering
 const formatCurrency = (val) => new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(val);
-const formatNumber = (val) => new Intl.NumberFormat('es-AR').format(val);
+const formatNumber = (val) => new Intl.NumberFormat('es-AR', { maximumFractionDigits: 2 }).format(val);
 
 function renderDashboard() {
     let totalRevenue = 0;
@@ -425,14 +460,137 @@ function renderDashboard() {
     if (cliEl) cliEl.textContent = formatNumber(clients.size);
     const itmEl = document.getElementById('kpiTotalItems');
     if (itmEl) itmEl.textContent = formatNumber(totalItems);
-    
+
+    // SOLUCIÓN 2: Calcular y pintar Vendedor Principal, Mejor Cliente y Producto Estrella
+    const topComercialEntry = Object.entries(comercialStats).sort((a, b) => b[1] - a[1])[0];
+    const topClientEntry = Object.entries(clientStats).sort((a, b) => b[1] - a[1])[0];
+    const topProdEntry = Object.entries(prodStats).sort((a, b) => b[1] - a[1])[0];
+
+    const topComEl = document.getElementById('kpiTopComercial');
+    if (topComEl) topComEl.textContent = topComercialEntry ? topComercialEntry[0] : '-';
+
+    const topCliEl = document.getElementById('kpiTopClient');
+    if (topCliEl) {
+        topCliEl.textContent = topClientEntry ? topClientEntry[0] : '-';
+        topCliEl.title = topClientEntry ? `${topClientEntry[0]} (${formatCurrency(topClientEntry[1])})` : '';
+    }
+
+    const topProdEl = document.getElementById('kpiTopProduct');
+    if (topProdEl) {
+        topProdEl.textContent = topProdEntry ? topProdEntry[0] : '-';
+        topProdEl.title = topProdEntry ? `${topProdEntry[0]} (${formatNumber(topProdEntry[1])} un.)` : '';
+    }
+
+    // SOLUCIÓN 3: Poblar también las tablas inferiores del Dashboard
+    renderDashboardTables();
     renderCharts(comercialStats);
     lucide.createIcons();
 }
 
+function renderDashboardTables() {
+    // 1. Ranking de Clientes por Vendedor
+    const topClientsTbody = document.querySelector('#topClientsComercialTable tbody');
+    if (topClientsTbody) {
+        const pairMap = {};
+        globalData.forEach(r => {
+            const key = `${r.comercial}|||${r.cliente}`;
+            pairMap[key] = (pairMap[key] || 0) + r.facturacion;
+        });
+        const sortedPairs = Object.entries(pairMap).sort((a, b) => b[1] - a[1]).slice(0, 50);
+        topClientsTbody.innerHTML = sortedPairs.map(([key, total]) => {
+            const [comercial, cliente] = key.split('|||');
+            return `<tr>
+                <td>${comercial}</td>
+                <td>${cliente}</td>
+                <td style="color: var(--success, #10b981); font-weight: 600;">${formatCurrency(total)}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // 2. Productos (Evolución)
+    const prodTrendTbody = document.querySelector('#productsTrendTable tbody');
+    if (prodTrendTbody) {
+        const mFilter = document.getElementById('monthFilter') ? document.getElementById('monthFilter').value : 'ALL';
+        const vFilter = document.getElementById('vendedorFilter') ? document.getElementById('vendedorFilter').value : 'ALL';
+        const allMonths = [...new Set(rawGlobalData.map(r => r.mes))].sort();
+        
+        let currentMonth = mFilter !== 'ALL' && !mFilter.startsWith('LAST_') ? mFilter : allMonths[allMonths.length - 1];
+        let prevMonthIndex = allMonths.indexOf(currentMonth) - 1;
+        let prevMonth = prevMonthIndex >= 0 ? allMonths[prevMonthIndex] : null;
+
+        const currProd = {};
+        const prevProd = {};
+
+        rawGlobalData.forEach(r => {
+            if (vFilter !== 'ALL' && r.comercial !== vFilter) return;
+            if (mFilter === 'ALL' || mFilter.startsWith('LAST_')) {
+                if (globalData.includes(r)) {
+                    currProd[r.producto] = (currProd[r.producto] || 0) + r.cantidad;
+                }
+            } else {
+                if (r.mes === currentMonth) currProd[r.producto] = (currProd[r.producto] || 0) + r.cantidad;
+                if (prevMonth && r.mes === prevMonth) prevProd[r.producto] = (prevProd[r.producto] || 0) + r.cantidad;
+            }
+        });
+
+        const allProds = new Set([...Object.keys(currProd), ...Object.keys(prevProd)]);
+        const sortedProds = Array.from(allProds)
+            .map(p => ({ prod: p, curr: currProd[p] || 0, prev: prevProd[p] || 0 }))
+            .sort((a, b) => b.curr - a.curr)
+            .slice(0, 50);
+
+        prodTrendTbody.innerHTML = sortedProds.map(item => {
+            let diffHtml = '<span style="color: var(--text-muted);">-</span>';
+            if (prevMonth && mFilter !== 'ALL' && !mFilter.startsWith('LAST_')) {
+                const diff = item.curr - item.prev;
+                if (diff > 0) diffHtml = `<span style="color: #10b981;">+${formatNumber(diff)}</span>`;
+                else if (diff < 0) diffHtml = `<span style="color: #ef4444;">${formatNumber(diff)}</span>`;
+                else diffHtml = `<span style="color: var(--text-muted);">0</span>`;
+            }
+            return `<tr>
+                <td><i data-lucide="package" style="width:16px;height:16px;color:var(--primary);"></i></td>
+                <td>${item.prod}</td>
+                <td>${formatNumber(item.curr)}</td>
+                <td>${diffHtml}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    // 3. Detalle de Compras por Cliente (Agrupado para mantener fluidez con +25.000 filas)
+    const detailTbody = document.querySelector('#mainDetailTable tbody');
+    if (detailTbody) {
+        const groupedDetails = {};
+        globalData.forEach(r => {
+            const key = `${r.id_cliente}|||${r.cliente}|||${r.comercial}|||${r.producto}`;
+            if (!groupedDetails[key]) {
+                groupedDetails[key] = { id: r.id_cliente, cliente: r.cliente, comercial: r.comercial, producto: r.producto, cant: 0, total: 0 };
+            }
+            groupedDetails[key].cant += r.cantidad;
+            groupedDetails[key].total += r.facturacion;
+        });
+
+        const rowsToRender = Object.values(groupedDetails).sort((a, b) => b.total - a.total).slice(0, 200);
+        detailTbody.innerHTML = rowsToRender.map(r => `
+            <tr>
+                <td>${r.cliente}</td>
+                <td>${r.id}</td>
+                <td>${r.comercial}</td>
+                <td>${r.producto}</td>
+                <td>${formatNumber(r.cant)}</td>
+                <td style="color: var(--success, #10b981); font-weight: 600;">${formatCurrency(r.total)}</td>
+            </tr>
+        `).join('');
+    }
+}
+
 function renderCharts(comercialStats) {
+    const vFilter = document.getElementById('vendedorFilter') ? document.getElementById('vendedorFilter').value : 'ALL';
     let revByMonth = {};
-    rawGlobalData.forEach(r => { revByMonth[r.mes] = (revByMonth[r.mes] || 0) + r.facturacion; });
+    rawGlobalData.forEach(r => {
+        if (vFilter === 'ALL' || r.comercial === vFilter) {
+            revByMonth[r.mes] = (revByMonth[r.mes] || 0) + r.facturacion;
+        }
+    });
     let months = Object.keys(revByMonth).sort();
     
     const monthlyCanvas = document.getElementById('monthlyRevenueChart');
@@ -462,7 +620,120 @@ function renderCharts(comercialStats) {
     }
 }
 
-function renderProductTrend() {}
+// ==========================================
+// VISTA: ANÁLISIS POR VENDEDOR
+// ==========================================
+function renderComercialView() {
+    const selector = document.getElementById('comercialSelector');
+    const tbody = document.querySelector('#comercialClientsTable tbody');
+    if (!selector || !tbody) return;
+
+    const selectedComercial = selector.value;
+    if (!selectedComercial) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--text-muted);">Selecciona un vendedor para ver el ranking de sus clientes.</td></tr>';
+        return;
+    }
+
+    const allMonths = [...new Set(rawGlobalData.map(r => r.mes))].sort();
+    const mFilter = document.getElementById('monthFilter') ? document.getElementById('monthFilter').value : 'ALL';
+    const currMonth = (mFilter !== 'ALL' && !mFilter.startsWith('LAST_')) ? mFilter : allMonths[allMonths.length - 1];
+    const prevMonth = allMonths.indexOf(currMonth) > 0 ? allMonths[allMonths.indexOf(currMonth) - 1] : null;
+
+    const clientMap = {};
+    rawGlobalData.forEach(r => {
+        if (r.comercial !== selectedComercial) return;
+        if (!clientMap[r.cliente]) clientMap[r.cliente] = { curr: 0, prev: 0 };
+        if (r.mes === currMonth) clientMap[r.cliente].curr += r.facturacion;
+        if (prevMonth && r.mes === prevMonth) clientMap[r.cliente].prev += r.facturacion;
+    });
+
+    const sorted = Object.entries(clientMap)
+        .map(([cliente, vals]) => ({ cliente, ...vals }))
+        .sort((a, b) => b.curr - a.curr);
+
+    tbody.innerHTML = sorted.map((item, idx) => {
+        const diff = item.curr - item.prev;
+        let trendHtml = '-';
+        let statusHtml = '<span class="badge">Estable</span>';
+        if (prevMonth) {
+            if (item.curr === 0 && item.prev > 0) {
+                trendHtml = `<span style="color:#ef4444;">-100%</span>`;
+                statusHtml = `<span class="badge" style="background:rgba(239,68,68,0.15);color:#ef4444;">Inactivo</span>`;
+            } else if (item.prev === 0 && item.curr > 0) {
+                trendHtml = `<span style="color:#10b981;">Nuevo</span>`;
+                statusHtml = `<span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981;">Nuevo</span>`;
+            } else if (diff > 0) {
+                const pct = ((diff / item.prev) * 100).toFixed(1);
+                trendHtml = `<span style="color:#10b981;">+${pct}%</span>`;
+                statusHtml = `<span class="badge" style="background:rgba(16,185,129,0.15);color:#10b981;">Sube</span>`;
+            } else if (diff < 0) {
+                const pct = ((diff / item.prev) * 100).toFixed(1);
+                trendHtml = `<span style="color:#ef4444;">${pct}%</span>`;
+                statusHtml = `<span class="badge" style="background:rgba(245,158,11,0.15);color:#f59e0b;">Baja</span>`;
+            }
+        }
+        return `<tr>
+            <td>#${idx + 1}</td>
+            <td>${item.cliente}</td>
+            <td style="font-weight:600;">${formatCurrency(item.curr)}</td>
+            <td>${prevMonth ? formatCurrency(item.prev) : '-'}</td>
+            <td>${trendHtml}</td>
+            <td>${statusHtml}</td>
+        </tr>`;
+    }).join('');
+}
+
+// ==========================================
+// VISTA: MIX DE PRODUCTOS
+// ==========================================
+function renderMixView() {
+    const clientProds = {};
+    globalData.forEach(r => {
+        if (!clientProds[r.cliente]) clientProds[r.cliente] = new Set();
+        clientProds[r.cliente].add(r.producto);
+    });
+
+    const groups = { g1_4: [], g5_10: [], g11_20: [], g21: [] };
+    Object.entries(clientProds).forEach(([cliente, prodsSet]) => {
+        const count = prodsSet.size;
+        if (count >= 1 && count <= 4) groups.g1_4.push({ cliente, count });
+        else if (count >= 5 && count <= 10) groups.g5_10.push({ cliente, count });
+        else if (count >= 11 && count <= 20) groups.g11_20.push({ cliente, count });
+        else if (count > 20) groups.g21.push({ cliente, count });
+    });
+
+    const fillMixTable = (tableId, countId, list) => {
+        list.sort((a, b) => b.count - a.count);
+        const countEl = document.getElementById(countId);
+        if (countEl) countEl.textContent = `${list.length} Clientes`;
+        const tbody = document.querySelector(`#${tableId} tbody`);
+        if (tbody) {
+            tbody.innerHTML = list.map(i => `<tr><td>${i.cliente}</td><td style="font-weight:600;">${i.count}</td></tr>`).join('');
+        }
+    };
+
+    fillMixTable('tableMix1_4', 'countMix1_4', groups.g1_4);
+    fillMixTable('tableMix5_10', 'countMix5_10', groups.g5_10);
+    fillMixTable('tableMix11_20', 'countMix11_20', groups.g11_20);
+    fillMixTable('tableMix21_plus', 'countMix21_plus', groups.g21);
+}
+
+function exportMixToExcel() {
+    if (!window.XLSX || globalData.length === 0) return;
+    const clientProds = {};
+    globalData.forEach(r => {
+        if (!clientProds[r.cliente]) clientProds[r.cliente] = new Set();
+        clientProds[r.cliente].add(r.producto);
+    });
+    const rows = Object.entries(clientProds)
+        .map(([cliente, set]) => ({ Cliente: cliente, 'Cantidad Productos Distintos': set.size }))
+        .sort((a, b) => b['Cantidad Productos Distintos'] - a['Cantidad Productos Distintos']);
+    
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Mix_Productos');
+    XLSX.writeFile(wb, 'Mix_Productos_Tucuman.xlsx');
+}
 
 // ==========================================
 // BÚSQUEDA Y DETALLE DE CLIENTES (CORREGIDO Y BLINDADO)
@@ -511,7 +782,6 @@ function searchClient() {
     const term = inputEl.value.toLowerCase().trim();
     if (!term) return;
 
-    // BÚSQUEDA FLEXIBLE POR COINCIDENCIA PARCIAL (Soluciona el error de iPhone)
     const rows = rawGlobalData.filter(r => {
         const idMatch = r.id_cliente && r.id_cliente.toString().toLowerCase().includes(term);
         const nameMatch = r.cliente && r.cliente.toString().toLowerCase().includes(term);
@@ -528,24 +798,18 @@ function searchClient() {
 
     const sample = rows[0];
 
-    // Actualizar Encabezados (Nombre, ID, Vendedor)
-    const nameEls = document.querySelectorAll('#clientDetailName, .client-name, .client-title');
-    nameEls.forEach(el => el.textContent = sample.cliente);
+    // Actualizar Encabezados del Modal (IDs exactos de index.html)
+    const cdName = document.getElementById('cdName');
+    if (cdName) cdName.textContent = sample.cliente;
     
-    const titleFallback = document.querySelector('#clientSearchView h2, #clientSearchView .text-xl, #clientSearchView .font-bold');
-    if (titleFallback && !titleFallback.textContent.includes('Evolución')) {
-        titleFallback.textContent = sample.cliente;
-    }
+    const cdId = document.getElementById('cdId');
+    if (cdId) cdId.textContent = sample.id_cliente;
 
-    const idEls = document.querySelectorAll('#clientDetailId, .client-id, .client-id-badge');
-    idEls.forEach(el => el.textContent = `ID: ${sample.id_cliente}`);
-
-    const vendEls = document.querySelectorAll('#clientDetailVendedor, .client-vendor, .vendor-name');
-    vendEls.forEach(el => el.textContent = sample.comercial);
+    const cdComercial = document.getElementById('cdComercial');
+    if (cdComercial) cdComercial.innerHTML = `<i data-lucide="briefcase" style="display:inline;vertical-align:middle;width:14px;height:14px;"></i> ${sample.comercial}`;
 
     // Calcular Totales, Boletas y Mix
     let totalFacturacion = 0;
-    let totalCantidad = 0;
     let uniqueFacturas = new Set(rows.map(r => r.factura).filter(f => f && f !== 'S/F'));
     let numBoletas = uniqueFacturas.size > 0 ? uniqueFacturas.size : rows.length;
 
@@ -555,7 +819,6 @@ function searchClient() {
 
     rows.forEach(r => {
         totalFacturacion += (r.facturacion || 0);
-        totalCantidad += (r.cantidad || 0);
         if (r.mes) {
             revByMonth[r.mes] = (revByMonth[r.mes] || 0) + r.facturacion;
         }
@@ -567,24 +830,24 @@ function searchClient() {
 
     const ticketPromedio = numBoletas > 0 ? totalFacturacion / numBoletas : 0;
 
-    // Inyectar valores superiores
-    const setValByIdOrClass = (ids, val) => {
-        ids.forEach(id => {
-            const el = document.getElementById(id) || document.querySelector('.' + id);
-            if (el) el.textContent = val;
-        });
-    };
+    // Inyectar valores en los IDs exactos de index.html (sin pisar kpiTotalRevenue del dashboard)
+    const cdTotal = document.getElementById('cdTotal');
+    if (cdTotal) cdTotal.textContent = formatCurrency(totalFacturacion);
 
-    setValByIdOrClass(['clientTotalRevenue', 'kpiTotalRevenue', 'clientTotalFacturacion', 'totalRevenue'], formatCurrency(totalFacturacion));
-    setValByIdOrClass(['clientTicketProm', 'ticketPromedio'], formatCurrency(ticketPromedio));
-    setValByIdOrClass(['clientTotalBoletas', 'totalBoletas'], `(${numBoletas} bol.)`);
-    setValByIdOrClass(['clientMixCount', 'mixCount', 'clientMix'], mixSet.size);
+    const cdAverageTicket = document.getElementById('cdAverageTicket');
+    if (cdAverageTicket) cdAverageTicket.textContent = formatCurrency(ticketPromedio);
+
+    const cdInvoicesCount = document.getElementById('cdInvoicesCount');
+    if (cdInvoicesCount) cdInvoicesCount.textContent = `(${numBoletas} bol.)`;
+
+    const cdMixProductos = document.getElementById('cdMixProductos');
+    if (cdMixProductos) cdMixProductos.textContent = mixSet.size;
 
     // Renderizar gráfico de barras del cliente
     const months = Object.keys(revByMonth).sort();
     const revenues = months.map(m => revByMonth[m]);
 
-    const canvasEl = document.getElementById('clientHistoryChart') || document.getElementById('monthlyRevenueChart');
+    const canvasEl = document.getElementById('clientHistoryChart');
     if (canvasEl && window.Chart) {
         if (clientHistoryChartInst) {
             clientHistoryChartInst.destroy();
@@ -614,8 +877,8 @@ function searchClient() {
         });
     }
 
-    // Rellenar la tabla inferior de productos
-    const tbody = document.querySelector('#clientDetailTable tbody') || document.querySelector('#clientSearchView table tbody') || document.querySelector('#clientSearchView .table tbody');
+    // Rellenar la tabla inferior de productos del cliente
+    const tbody = document.querySelector('#clientProductsTable tbody');
     if (tbody) {
         tbody.innerHTML = '';
         Object.entries(prodStats)
@@ -630,10 +893,9 @@ function searchClient() {
             });
     }
 
-    // Forzar visibilidad
-    document.querySelectorAll('#clientSearchView .hidden, #clientResultContainer.hidden').forEach(el => {
-        el.classList.remove('hidden');
-    });
+    // Mostrar modal de cliente
+    const clientDetailsModal = document.getElementById('clientDetails');
+    if (clientDetailsModal) clientDetailsModal.classList.remove('hidden');
 
     if (window.lucide) lucide.createIcons();
 }
@@ -659,4 +921,6 @@ function applyFilters() {
     });
     
     renderDashboard();
+    if (currentView === 'mix') renderMixView();
+    if (currentView === 'comercial') renderComercialView();
 }
