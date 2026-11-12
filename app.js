@@ -223,7 +223,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const monthFilterEl = document.getElementById('monthFilter');
     if (monthFilterEl) monthFilterEl.addEventListener('change', applyFilters);
 
-    // SOLUCIÓN 1: Conectar el evento change del filtro de vendedor
     const vendedorFilterEl = document.getElementById('vendedorFilter');
     if (vendedorFilterEl) vendedorFilterEl.addEventListener('change', applyFilters);
 
@@ -231,7 +230,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (comercialSelectorEl) comercialSelectorEl.addEventListener('change', renderComercialView);
 
     const btnSearchClient = document.getElementById('btnSearchClient');
-    if (btnSearchClient) btnSearchClient.addEventListener('click', searchClient);
+    if (btnSearchClient) btnSearchClient.addEventListener('click', () => searchClient());
+
+    const clientSearchInputEl = document.getElementById('clientSearchInput');
+    if (clientSearchInputEl) {
+        clientSearchInputEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const sug = document.getElementById('searchSuggestions');
+                if (sug) sug.classList.add('hidden');
+                searchClient();
+            }
+        });
+    }
 
     const btnClosePresentation = document.getElementById('btnClosePresentation');
     if (btnClosePresentation) {
@@ -461,7 +472,6 @@ function renderDashboard() {
     const itmEl = document.getElementById('kpiTotalItems');
     if (itmEl) itmEl.textContent = formatNumber(totalItems);
 
-    // SOLUCIÓN 2: Calcular y pintar Vendedor Principal, Mejor Cliente y Producto Estrella
     const topComercialEntry = Object.entries(comercialStats).sort((a, b) => b[1] - a[1])[0];
     const topClientEntry = Object.entries(clientStats).sort((a, b) => b[1] - a[1])[0];
     const topProdEntry = Object.entries(prodStats).sort((a, b) => b[1] - a[1])[0];
@@ -481,14 +491,12 @@ function renderDashboard() {
         topProdEl.title = topProdEntry ? `${topProdEntry[0]} (${formatNumber(topProdEntry[1])} un.)` : '';
     }
 
-    // SOLUCIÓN 3: Poblar también las tablas inferiores del Dashboard
     renderDashboardTables();
     renderCharts(comercialStats);
     lucide.createIcons();
 }
 
 function renderDashboardTables() {
-    // 1. Ranking de Clientes por Vendedor
     const topClientsTbody = document.querySelector('#topClientsComercialTable tbody');
     if (topClientsTbody) {
         const pairMap = {};
@@ -507,7 +515,6 @@ function renderDashboardTables() {
         }).join('');
     }
 
-    // 2. Productos (Evolución)
     const prodTrendTbody = document.querySelector('#productsTrendTable tbody');
     if (prodTrendTbody) {
         const mFilter = document.getElementById('monthFilter') ? document.getElementById('monthFilter').value : 'ALL';
@@ -556,7 +563,6 @@ function renderDashboardTables() {
         }).join('');
     }
 
-    // 3. Detalle de Compras por Cliente (Agrupado para mantener fluidez con +25.000 filas)
     const detailTbody = document.querySelector('#mainDetailTable tbody');
     if (detailTbody) {
         const groupedDetails = {};
@@ -736,7 +742,7 @@ function exportMixToExcel() {
 }
 
 // ==========================================
-// BÚSQUEDA Y DETALLE DE CLIENTES (CORREGIDO Y BLINDADO)
+// BÚSQUEDA Y DETALLE DE CLIENTES (COMPLETO CON MES A MES)
 // ==========================================
 const clientSearchInput = document.getElementById('clientSearchInput');
 if (clientSearchInput) {
@@ -767,7 +773,7 @@ if (clientSearchInput) {
             d.onclick = () => { 
                 clientSearchInput.value = name; 
                 sug.classList.add('hidden'); 
-                searchClient(); 
+                searchClient(id !== 'S/ID' ? id : name); 
             };
             sug.appendChild(d);
         });
@@ -775,17 +781,19 @@ if (clientSearchInput) {
     });
 }
 
-function searchClient() {
+function searchClient(exactKey = null) {
     const inputEl = document.getElementById('clientSearchInput');
-    if (!inputEl) return;
-    
-    const term = inputEl.value.toLowerCase().trim();
+    const rawTerm = exactKey ? String(exactKey) : (inputEl ? inputEl.value : '');
+    const term = rawTerm.toLowerCase().trim();
     if (!term) return;
 
     const rows = rawGlobalData.filter(r => {
-        const idMatch = r.id_cliente && r.id_cliente.toString().toLowerCase().includes(term);
-        const nameMatch = r.cliente && r.cliente.toString().toLowerCase().includes(term);
-        return idMatch || nameMatch;
+        const idStr = r.id_cliente ? r.id_cliente.toString().toLowerCase().trim() : '';
+        const nameStr = r.cliente ? r.cliente.toString().toLowerCase().trim() : '';
+        if (exactKey) {
+            return idStr === term || nameStr === term;
+        }
+        return idStr.includes(term) || nameStr.includes(term);
     });
 
     const emptyState = document.getElementById('clientEmptyState');
@@ -798,7 +806,7 @@ function searchClient() {
 
     const sample = rows[0];
 
-    // Actualizar Encabezados del Modal (IDs exactos de index.html)
+    // 1. Actualizar Encabezados del Modal (Nombre, ID y Vendedor)
     const cdName = document.getElementById('cdName');
     if (cdName) cdName.textContent = sample.cliente;
     
@@ -806,31 +814,48 @@ function searchClient() {
     if (cdId) cdId.textContent = sample.id_cliente;
 
     const cdComercial = document.getElementById('cdComercial');
-    if (cdComercial) cdComercial.innerHTML = `<i data-lucide="briefcase" style="display:inline;vertical-align:middle;width:14px;height:14px;"></i> ${sample.comercial}`;
+    if (cdComercial) {
+        cdComercial.innerHTML = `<i data-lucide="briefcase" style="display:inline;vertical-align:middle;width:14px;height:14px;"></i> ${sample.comercial}`;
+    }
 
-    // Calcular Totales, Boletas y Mix
+    // 2. Calcular Totales, Boletas, Mix y Desglose Mensual por Producto
     let totalFacturacion = 0;
     let uniqueFacturas = new Set(rows.map(r => r.factura).filter(f => f && f !== 'S/F'));
     let numBoletas = uniqueFacturas.size > 0 ? uniqueFacturas.size : rows.length;
 
     let revByMonth = {};
-    let prodStats = {}; 
+    let prodMatrix = {}; // { producto: { totalFact: 0, totalCant: 0, byMonthCant: { '2026-06': 10 } } }
     let mixSet = new Set();
 
+    // Obtener los últimos 6 meses disponibles en el sistema (o del cliente)
+    const allSystemMonths = [...new Set(rawGlobalData.map(r => r.mes).filter(m => m && m !== 'Desconocido'))].sort();
+    const last6Months = allSystemMonths.slice(-6);
+
     rows.forEach(r => {
-        totalFacturacion += (r.facturacion || 0);
-        if (r.mes) {
-            revByMonth[r.mes] = (revByMonth[r.mes] || 0) + r.facturacion;
+        const fact = parseFloat(r.facturacion) || 0;
+        const cant = parseFloat(r.cantidad) || 0;
+        totalFacturacion += fact;
+
+        if (r.mes && r.mes !== 'Desconocido') {
+            revByMonth[r.mes] = (revByMonth[r.mes] || 0) + fact;
         }
+
         if (r.producto) {
             mixSet.add(r.producto);
-            prodStats[r.producto] = (prodStats[r.producto] || 0) + r.facturacion;
+            if (!prodMatrix[r.producto]) {
+                prodMatrix[r.producto] = { totalFact: 0, totalCant: 0, byMonthCant: {} };
+            }
+            prodMatrix[r.producto].totalFact += fact;
+            prodMatrix[r.producto].totalCant += cant;
+            if (r.mes && r.mes !== 'Desconocido') {
+                prodMatrix[r.producto].byMonthCant[r.mes] = (prodMatrix[r.producto].byMonthCant[r.mes] || 0) + cant;
+            }
         }
     });
 
     const ticketPromedio = numBoletas > 0 ? totalFacturacion / numBoletas : 0;
 
-    // Inyectar valores en los IDs exactos de index.html (sin pisar kpiTotalRevenue del dashboard)
+    // 3. Inyectar KPIs superiores del cliente (Mix, Ticket Prom., Boletas y Total)
     const cdTotal = document.getElementById('cdTotal');
     if (cdTotal) cdTotal.textContent = formatCurrency(totalFacturacion);
 
@@ -843,7 +868,7 @@ function searchClient() {
     const cdMixProductos = document.getElementById('cdMixProductos');
     if (cdMixProductos) cdMixProductos.textContent = mixSet.size;
 
-    // Renderizar gráfico de barras del cliente
+    // 4. Renderizar gráfico de barras de Evolución Mensual de Compras
     const months = Object.keys(revByMonth).sort();
     const revenues = months.map(m => revByMonth[m]);
 
@@ -877,23 +902,41 @@ function searchClient() {
         });
     }
 
-    // Rellenar la tabla inferior de productos del cliente
+    // 5. Construir encabezados dinámicos de meses y filas con cantidades mes a mes
+    const thead = document.getElementById('clientProductsTableHead');
+    if (thead) {
+        thead.innerHTML = `
+            <tr>
+                <th>Producto</th>
+                ${last6Months.map(m => `<th style="text-align: center;">${m}</th>`).join('')}
+                <th style="text-align: right;">Total ($)</th>
+            </tr>
+        `;
+    }
+
     const tbody = document.querySelector('#clientProductsTable tbody');
     if (tbody) {
         tbody.innerHTML = '';
-        Object.entries(prodStats)
-            .sort((a, b) => b[1] - a[1])
-            .forEach(([prod, total]) => {
+        Object.entries(prodMatrix)
+            .sort((a, b) => b[1].totalFact - a[1].totalFact)
+            .forEach(([prod, stats]) => {
                 const tr = document.createElement('tr');
+                const monthCells = last6Months.map(m => {
+                    const qty = stats.byMonthCant[m] || 0;
+                    const colorStyle = qty > 0 ? 'color: #ffffff; font-weight: 600;' : 'color: var(--text-muted); opacity: 0.45;';
+                    return `<td style="text-align: center; ${colorStyle}">${qty > 0 ? formatNumber(qty) : '-'}</td>`;
+                }).join('');
+
                 tr.innerHTML = `
                     <td>${prod}</td>
-                    <td style="color:var(--success); font-weight:600;">${formatCurrency(total)}</td>
+                    ${monthCells}
+                    <td style="text-align: right; color: var(--success, #10b981); font-weight: 600;">${formatCurrency(stats.totalFact)}</td>
                 `;
                 tbody.appendChild(tr);
             });
     }
 
-    // Mostrar modal de cliente
+    // 6. Mostrar modal de cliente
     const clientDetailsModal = document.getElementById('clientDetails');
     if (clientDetailsModal) clientDetailsModal.classList.remove('hidden');
 
