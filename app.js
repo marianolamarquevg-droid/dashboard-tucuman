@@ -258,6 +258,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    const productDropModal = document.getElementById('productDropModal');
+    if (productDropModal) {
+        productDropModal.addEventListener('click', (e) => {
+            if (e.target === productDropModal) {
+                productDropModal.classList.add('hidden');
+            }
+        });
+    }
+
     const btnExportMix = document.getElementById('btnExportMix');
     if (btnExportMix) btnExportMix.addEventListener('click', exportMixToExcel);
 });
@@ -497,6 +506,7 @@ function renderDashboard() {
 }
 
 function renderDashboardTables() {
+    // 1. Ranking de Clientes por Vendedor
     const topClientsTbody = document.querySelector('#topClientsComercialTable tbody');
     if (topClientsTbody) {
         const pairMap = {};
@@ -515,13 +525,14 @@ function renderDashboardTables() {
         }).join('');
     }
 
+    // 2. Productos (Evolución) con botón de OJO y porcentaje vs Mes Ant.
     const prodTrendTbody = document.querySelector('#productsTrendTable tbody');
     if (prodTrendTbody) {
         const mFilter = document.getElementById('monthFilter') ? document.getElementById('monthFilter').value : 'ALL';
         const vFilter = document.getElementById('vendedorFilter') ? document.getElementById('vendedorFilter').value : 'ALL';
-        const allMonths = [...new Set(rawGlobalData.map(r => r.mes))].sort();
+        const allMonths = [...new Set(rawGlobalData.map(r => r.mes).filter(m => m && m !== 'Desconocido'))].sort();
         
-        let currentMonth = mFilter !== 'ALL' && !mFilter.startsWith('LAST_') ? mFilter : allMonths[allMonths.length - 1];
+        let currentMonth = (mFilter !== 'ALL' && !mFilter.startsWith('LAST_')) ? mFilter : allMonths[allMonths.length - 1];
         let prevMonthIndex = allMonths.indexOf(currentMonth) - 1;
         let prevMonth = prevMonthIndex >= 0 ? allMonths[prevMonthIndex] : null;
 
@@ -530,39 +541,55 @@ function renderDashboardTables() {
 
         rawGlobalData.forEach(r => {
             if (vFilter !== 'ALL' && r.comercial !== vFilter) return;
-            if (mFilter === 'ALL' || mFilter.startsWith('LAST_')) {
-                if (globalData.includes(r)) {
-                    currProd[r.producto] = (currProd[r.producto] || 0) + r.cantidad;
-                }
-            } else {
-                if (r.mes === currentMonth) currProd[r.producto] = (currProd[r.producto] || 0) + r.cantidad;
-                if (prevMonth && r.mes === prevMonth) prevProd[r.producto] = (prevProd[r.producto] || 0) + r.cantidad;
-            }
+            if (r.mes === currentMonth) currProd[r.producto] = (currProd[r.producto] || 0) + r.cantidad;
+            if (prevMonth && r.mes === prevMonth) prevProd[r.producto] = (prevProd[r.producto] || 0) + r.cantidad;
         });
 
         const allProds = new Set([...Object.keys(currProd), ...Object.keys(prevProd)]);
         const sortedProds = Array.from(allProds)
             .map(p => ({ prod: p, curr: currProd[p] || 0, prev: prevProd[p] || 0 }))
+            .filter(item => item.curr > 0 || item.prev > 0)
             .sort((a, b) => b.curr - a.curr)
-            .slice(0, 50);
+            .slice(0, 60);
 
-        prodTrendTbody.innerHTML = sortedProds.map(item => {
-            let diffHtml = '<span style="color: var(--text-muted);">-</span>';
-            if (prevMonth && mFilter !== 'ALL' && !mFilter.startsWith('LAST_')) {
-                const diff = item.curr - item.prev;
-                if (diff > 0) diffHtml = `<span style="color: #10b981;">+${formatNumber(diff)}</span>`;
-                else if (diff < 0) diffHtml = `<span style="color: #ef4444;">${formatNumber(diff)}</span>`;
-                else diffHtml = `<span style="color: var(--text-muted);">0</span>`;
+        prodTrendTbody.innerHTML = '';
+        sortedProds.forEach(item => {
+            let pctHtml = '<span style="color: var(--text-muted);">-</span>';
+            if (prevMonth) {
+                if (item.prev > 0) {
+                    const pct = ((item.curr - item.prev) / item.prev) * 100;
+                    if (pct > 0) {
+                        pctHtml = `<span style="color: #10b981; font-weight: 600;">+${pct.toFixed(1)}%</span>`;
+                    } else if (pct < 0) {
+                        pctHtml = `<span style="color: #ef4444; font-weight: 600;">${pct.toFixed(1)}%</span>`;
+                    } else {
+                        pctHtml = `<span style="color: var(--text-muted);">0.0%</span>`;
+                    }
+                } else if (item.curr > 0) {
+                    pctHtml = `<span style="color: #10b981; font-weight: 600;">Nuevo</span>`;
+                }
             }
-            return `<tr>
-                <td><i data-lucide="package" style="width:16px;height:16px;color:var(--primary);"></i></td>
-                <td>${item.prod}</td>
+
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td style="text-align: center;">
+                    <button class="btn-inspect-prod" title="Ver detalle de clientes" style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); color: #10b981; width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s;">
+                        <i data-lucide="eye" style="width: 15px; height: 15px;"></i>
+                    </button>
+                </td>
+                <td style="font-weight: 500;">${item.prod}</td>
                 <td>${formatNumber(item.curr)}</td>
-                <td>${diffHtml}</td>
-            </tr>`;
-        }).join('');
+                <td>${pctHtml}</td>
+            `;
+            const eyeBtn = tr.querySelector('.btn-inspect-prod');
+            if (eyeBtn) {
+                eyeBtn.addEventListener('click', () => openProductDropModal(item.prod, currentMonth, prevMonth));
+            }
+            prodTrendTbody.appendChild(tr);
+        });
     }
 
+    // 3. Detalle de Compras por Cliente
     const detailTbody = document.querySelector('#mainDetailTable tbody');
     if (detailTbody) {
         const groupedDetails = {};
@@ -587,6 +614,77 @@ function renderDashboardTables() {
             </tr>
         `).join('');
     }
+}
+
+// ==========================================
+// MODAL DE DETALLE DE PRODUCTO (OJO)
+// ==========================================
+function openProductDropModal(productName, currentMonth, prevMonth) {
+    const modal = document.getElementById('productDropModal');
+    const titleEl = document.getElementById('modalProductTitle');
+    const tbody = document.querySelector('#productDropTable tbody');
+    if (!modal || !tbody) return;
+
+    const vFilter = document.getElementById('vendedorFilter') ? document.getElementById('vendedorFilter').value : 'ALL';
+
+    if (titleEl) {
+        titleEl.textContent = `${productName} (${prevMonth || '-'} vs ${currentMonth || '-'})`;
+    }
+
+    const clientMap = {};
+    rawGlobalData.forEach(r => {
+        if (r.producto !== productName) return;
+        if (vFilter !== 'ALL' && r.comercial !== vFilter) return;
+
+        if (!clientMap[r.cliente]) {
+            clientMap[r.cliente] = { prev: 0, curr: 0 };
+        }
+        if (prevMonth && r.mes === prevMonth) clientMap[r.cliente].prev += r.cantidad;
+        if (currentMonth && r.mes === currentMonth) clientMap[r.cliente].curr += r.cantidad;
+    });
+
+    const rows = Object.entries(clientMap)
+        .map(([cliente, vals]) => ({
+            cliente,
+            prev: vals.prev,
+            curr: vals.curr,
+            diff: vals.curr - vals.prev
+        }))
+        .filter(item => item.prev > 0 || item.curr > 0)
+        .sort((a, b) => a.diff - b.diff);
+
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--text-muted);">Sin movimientos registrados para este producto.</td></tr>';
+    } else {
+        tbody.innerHTML = rows.map(r => {
+            let diffColor = 'var(--text-muted)';
+            let diffPrefix = '';
+            if (r.diff < 0) {
+                diffColor = '#ef4444';
+            } else if (r.diff > 0) {
+                diffColor = '#10b981';
+                diffPrefix = '+';
+            }
+
+            const statusBadge = (r.prev > 0 && r.curr === 0)
+                ? ' <span style="font-size: 0.7rem; background: rgba(239,68,68,0.15); color: #ef4444; padding: 2px 6px; border-radius: 4px; margin-left: 4px;">Dejó de comprar</span>'
+                : (r.prev === 0 && r.curr > 0)
+                    ? ' <span style="font-size: 0.7rem; background: rgba(16,185,129,0.15); color: #10b981; padding: 2px 6px; border-radius: 4px; margin-left: 4px;">Nuevo</span>'
+                    : '';
+
+            return `
+                <tr>
+                    <td>${r.cliente}${statusBadge}</td>
+                    <td>${formatNumber(r.prev)}</td>
+                    <td>${formatNumber(r.curr)}</td>
+                    <td style="color: ${diffColor}; font-weight: 600;">${diffPrefix}${formatNumber(r.diff)}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    modal.classList.remove('hidden');
+    if (window.lucide) lucide.createIcons();
 }
 
 function renderCharts(comercialStats) {
@@ -824,10 +922,9 @@ function searchClient(exactKey = null) {
     let numBoletas = uniqueFacturas.size > 0 ? uniqueFacturas.size : rows.length;
 
     let revByMonth = {};
-    let prodMatrix = {}; // { producto: { totalFact: 0, totalCant: 0, byMonthCant: { '2026-06': 10 } } }
+    let prodMatrix = {};
     let mixSet = new Set();
 
-    // Obtener los últimos 6 meses disponibles en el sistema (o del cliente)
     const allSystemMonths = [...new Set(rawGlobalData.map(r => r.mes).filter(m => m && m !== 'Desconocido'))].sort();
     const last6Months = allSystemMonths.slice(-6);
 
@@ -855,7 +952,7 @@ function searchClient(exactKey = null) {
 
     const ticketPromedio = numBoletas > 0 ? totalFacturacion / numBoletas : 0;
 
-    // 3. Inyectar KPIs superiores del cliente (Mix, Ticket Prom., Boletas y Total)
+    // 3. Inyectar KPIs superiores del cliente
     const cdTotal = document.getElementById('cdTotal');
     if (cdTotal) cdTotal.textContent = formatCurrency(totalFacturacion);
 
